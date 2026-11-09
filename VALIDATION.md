@@ -12,9 +12,18 @@ Windows / Python 3.11.9 verification on 2026-11-10:
 - Reservation concurrency, lost billing response, cancellation, unknown command redelivery, independent verification rejection, long-task evidence retention and Windows journal handle release have regression coverage.
 - Version-pinned dependencies pass `pip check`. Built wheel contains the panel's HTML/CSS/JS assets.
 - Full npm dependency audit reports zero known vulnerabilities after updating the test runner to Vitest 5.1.0; both production and development dependencies were included.
+- Installing the built wheel into a separate target and importing the installed package/panel assets passed.
 - A **72-second synthetic soak** completed **422 cycles with zero failures**, including duplicate acknowledgements and journal/store reopen. It is not the 24-hour acceptance run.
 - The local Edge browser test could not launch successfully inside the execution sandbox. Bundled Chromium installation also encountered a host `realpath` permission error. The opt-in real-browser test is supplied in a separate Windows CI job; its result must be checked independently.
 - Panel visual QA could not complete: Computer Use stopped because it could not reliably determine the current Windows browser URL. No visual-QA pass is claimed.
+
+## GitHub Actions verification
+
+[Quality checks run 42721451958](https://github.com/rvnsre/extreme-autopilot/actions/runs/42721451958) completed successfully for source commit `f35a2e492e2cf01f9ec091db5b387ebad82b11e6`.
+
+- All four Windows/Linux × Python 3.11/3.12 jobs passed backend tests, frontend tests, formatting checks and package builds.
+- The separate Windows real-Chromium job passed `test_real_browser_elements_keyboard_freshness_and_screen` (**1 passed**), exercising real page navigation, element filling/focus, keyboard activation, stale-frame rejection and JPEG observation.
+- This verifies the browser executor with a synthetic website on a hosted runner. It does not verify real Ollama/OpenAI decisions, authenticated production websites or a user's dedicated VM.
 
 ## Required live acceptance (not yet completed)
 
