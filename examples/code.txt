@@ -1,0 +1,1 @@
+Bu tapşırığın iş qovluğunda Python ilə iki ədədin ən böyük ortaq bölənini hesablayan kiçik proqram yarat. Mənfi ədədlər və sıfır üçün davranışı sənədləşdir. Python unittest ilə normal və sərhəd halları yoxlayan testlər yaz və həmin testləri işə sal. README.md sənədi əlavə et, bütün nəticə fayllarını yenidən oxu və testlərin çıxış kodunu yekun hesabatda göstər.

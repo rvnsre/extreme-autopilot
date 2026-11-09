@@ -1,0 +1,1 @@
+Windows virtual maşınında ayrıca açılmış Notepad proqramında Azərbaycan dilində qısa layihə qeydi hazırla. Qeyddə layihənin məqsədini, görülmüş işləri və üç növbəti addımı yaz. Nəticəni yalnız bu tapşırığın iş qovluğunda project-note.txt adı ilə saxla. Sonra faylı bağlayıb yenidən açaraq məzmununu yoxla. Heç bir mesaj göndərmə və başqa qovluqlardakı faylları dəyişmə.

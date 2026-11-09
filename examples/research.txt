@@ -1,0 +1,1 @@
+Azərbaycan dilində yeni başlayanlar üçün Python-un rəsmi sənədlərindən virtual mühitlərin nə olduğunu araşdır. https://docs.python.org saytındakı mənbələrə əsaslan, üç əsas istifadə addımını izah et və mənbə keçidləri ilə birlikdə report.md faylına yaz. Faylı yenidən oxuyaraq məzmununu yoxla. Hesabatı heç bir xarici ünvana göndərmə.

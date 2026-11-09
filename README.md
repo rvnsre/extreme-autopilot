@@ -11,12 +11,13 @@ One brief, autonomous execution in a dedicated Windows VM. Azərbaycan dilində 
 - Executes sequential browser, Windows UI, file and bounded process tools in a dedicated worker.
 - Uses API/text, elements and keyboard first; mouse is fallback. Observations carry freshness identifiers.
 - Journals commands before execution, caches results before acknowledgement and fences uncertain actions after a crash.
+- Retains a compact per-goal evidence index across long runs, even after earlier actions leave recent model context.
 - Tracks cloud reservations/usage, stops new paid requests at the configured application budget and exposes reports/artifacts.
 - Provides the same job lifecycle through the panel, CLI and HTTP API. Default: 24 hours, $5, 2,000 tool operations.
 
 ## Quick start
 
-Python 3.11+ and Node 20+ are required. Install from the source checkout:
+Python 3.11+ and Node 22.12+ (22/24/26 supported release lines) are required. Install from the source checkout:
 
 ```powershell
 .\scripts\Install-Coordinator.ps1
