@@ -4,7 +4,16 @@ This is a source implementation preview. It must not be represented as a zero-er
 
 ## v0.3.0 platform verification
 
-On Windows/Python 3.11, **116 tests passed**, 3 platform/opt-in tests skipped and one upstream Starlette/httpx warning remained. Ruff and formatting checks passed; 6 frontend tests and the production build passed. The three-OS CI result is pending publication. [PLATFORMS.md](docs/PLATFORMS.md) describes supported backends, required permissions and native Wayland restrictions. macOS native GUI input requires dedicated-worker acceptance; permission preflight alone is not a GUI input pass.
+On Windows/Python 3.11, **118 tests passed**, 3 platform/opt-in tests skipped and one upstream Starlette/httpx warning remained. Ruff and formatting checks passed; 6 frontend tests and the production build passed.
+
+[Three-OS CI run 42728622135](https://github.com/rvnsre/extreme-autopilot/actions/runs/42728622135) passed **all 10 jobs** for source commit `4abb7a24a363fbed566a9cdc10d0c102a2884df5`:
+
+- Windows/Linux/macOS × Python 3.11/3.12: backend tests, 6 frontend tests, full npm audit (zero findings), type checks and wheel/source builds passed. Windows and macOS ran 118 Python tests each; Linux ran 117. Platform-specific and opt-in skips were 3/3/4 respectively. macOS includes the native permission preflight, not native GUI input acceptance.
+- Real Chromium passed on **all three OSes**. Linux used a runner-specific AppArmor profile to keep Chromium sandboxing enabled.
+- Real X11/Openbox integration passed Unicode Azerbaijani/Russian typing into a disposable application's window, screenshot, keyboard submission, independent file readback and stale-frame rejection.
+- CI exposed a Darwin process-group cleanup failure: `killpg` can report EPERM for zombie-only orphan groups. Cleanup now verifies the group has no live members before suppressing denial; permission failures with live members remain errors. Output threads are joined/stopped even if cleanup fails. Both macOS Python versions passed the real child-process lifecycle regression after this correction.
+
+[PLATFORMS.md](docs/PLATFORMS.md) describes supported backends, required permissions and native Wayland restrictions. macOS native GUI input requires dedicated-worker acceptance; permission preflight alone is not a GUI input pass. Live model/VM and full 24-hour acceptance below remain pending.
 
 The detailed results below are retained v0.2.0 evidence unless explicitly stated otherwise.
 
