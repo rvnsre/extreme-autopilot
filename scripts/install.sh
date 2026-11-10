@@ -13,7 +13,9 @@ fi
 case "$(uname -s)" in Linux|Darwin) ;; *) echo 'Use the PowerShell installers on Windows.' >&2; exit 2;; esac
 cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 "${PYTHON:-python3}" -m venv .venv
-.venv/bin/python -m pip install --requirement "requirements-${role}.lock.txt"
+lock_role="$role"
+if [[ "$role" == coordinator ]]; then lock_role=economy; fi
+.venv/bin/python -m pip install --requirement "requirements-${lock_role}.lock.txt"
 .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
 if [[ "$role" == coordinator ]]; then
   (cd web && npm ci --no-audit --no-fund && npm run build)

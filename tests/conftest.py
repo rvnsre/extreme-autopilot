@@ -18,6 +18,7 @@ def settings(tmp_path):
         input_usd_per_million=1,
         output_usd_per_million=4,
         headless=True,
+        economy_enabled=False,
     )
 
 

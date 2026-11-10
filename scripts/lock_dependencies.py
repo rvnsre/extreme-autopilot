@@ -31,7 +31,8 @@ def closure(roots):
                 child.marker.evaluate({"extra": extra}) for extra in ["", *requirement.extras]
             ):
                 continue
-            pending.append(spec)
+            child.marker = None  # Already evaluated in the parent's extras context.
+            pending.append(str(child))
     return result
 
 
@@ -40,6 +41,7 @@ def main():
     core = project["dependencies"] + ["setuptools>=75", "wheel"]
     groups = {
         "coordinator": core,
+        "economy": core + project["optional-dependencies"]["economy"],
         "worker": core + project["optional-dependencies"]["worker"],
         "dev": core + project["optional-dependencies"]["dev"] + ["playwright", "pillow", "pywin32"],
     }
@@ -63,7 +65,11 @@ def main():
                 "pytweening",
                 "six",
             }
-            marker = "; sys_platform == 'win32'" if name in windows_only else ""
+            marker = (
+                "; sys_platform == 'win32'"
+                if name in {"pywin32", "comtypes"} or (group == "worker" and name in windows_only)
+                else ""
+            )
             lines.append(f"{name}=={version}{marker}")
         (ROOT / f"requirements-{group}.lock.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

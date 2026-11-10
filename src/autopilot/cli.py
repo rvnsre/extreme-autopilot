@@ -107,6 +107,11 @@ def main():
         action="store_true",
         help="Probe the local interactive desktop without requesting permissions",
     )
+    economy = sub.add_parser("economy", help="Local token-cost diagnostics; no model request")
+    economy.add_argument("operation", choices=["status", "analyze", "warm-tokenizer", "benchmark"])
+    economy.add_argument("--file", type=Path)
+    economy.add_argument("--query", help="JMESPath projection for a local JSON document")
+    economy.add_argument("--out", type=Path)
     serve = sub.add_parser("serve")
     serve.add_argument("--worker-bind", default="127.0.0.1")
     serve.add_argument("--cert", type=Path, required=True)
@@ -130,7 +135,36 @@ def main():
         print(secrets.token_urlsafe(48))
         return
     s = Settings(_env_file=args.env_file)
-    if args.command == "tls":
+    if args.command == "economy":
+        try:
+            from autopilot.economy import Economy, library_status
+        except ImportError:
+            parser.error("Install requirements-economy.lock.txt on the coordinator first")
+
+        optimizer = Economy(s.data_dir / "economy", s.economy_text_limit, s.economy_plan_ttl)
+        try:
+            if args.operation == "status":
+                result = {"libraries": library_status(), "tokenizer": optimizer.meter.count("")["basis"]}
+            elif args.operation == "warm-tokenizer":
+                result = optimizer.meter.warm()
+            elif args.operation == "benchmark":
+                from autopilot.economy_benchmark import benchmark
+
+                result = benchmark(optimizer)
+            else:
+                if not args.file or not args.file.is_file() or args.file.stat().st_size > 180000:
+                    parser.error("analyze requires a file no larger than 180 KB")
+                text = args.file.read_text(encoding="utf-8-sig")
+                value = json.loads(text) if args.file.suffix.lower() == ".json" else text
+                result = optimizer.analyze(value, args.query)
+            encoded = json.dumps(result, ensure_ascii=False, indent=2)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(encoded, encoding="utf-8")
+            print(encoded)
+        finally:
+            optimizer.close()
+    elif args.command == "tls":
         print(json.dumps(tls_certificate(s.data_dir / "tls", args.host), indent=2))
     elif args.command == "doctor":
         print(json.dumps(asyncio.run(doctor(s, args.models, args.desktop)), ensure_ascii=False, indent=2))

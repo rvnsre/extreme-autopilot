@@ -1,0 +1,117 @@
+{
+  "synthetic_only": true,
+  "live_quality_verified": false,
+  "provider_dollars_saved": null,
+  "cases": [
+    {
+      "before_bytes": 10770,
+      "after_bytes": 4019,
+      "before_tokens": 1961,
+      "after_tokens": 870,
+      "token_basis": "cl100k_estimate",
+      "final_evidence_preserved": false,
+      "excerpt_count": 1,
+      "context_digest": "9fbd6c72af99786305763b93a7d22bbbd5d356ea73e0871be525a16e2db49523",
+      "manifest_patch": [
+        {
+          "op": "replace",
+          "path": "/bytes",
+          "value": 4019
+        },
+        {
+          "op": "replace",
+          "path": "/tokens",
+          "value": 870
+        }
+      ],
+      "case": "repeated_research",
+      "elapsed_ms": 336.02,
+      "final_evidence_unchanged": true,
+      "estimated_reduction_percent": 55.63,
+      "no_model_request": true
+    },
+    {
+      "before_bytes": 8494,
+      "after_bytes": 3850,
+      "before_tokens": 1859,
+      "after_tokens": 851,
+      "token_basis": "cl100k_estimate",
+      "final_evidence_preserved": false,
+      "excerpt_count": 1,
+      "context_digest": "2d116a93c7a2cf08fdb4a2a4faf9db48931ee882a661ef5e62b92453c3c6c3c2",
+      "manifest_patch": [
+        {
+          "op": "replace",
+          "path": "/bytes",
+          "value": 3850
+        },
+        {
+          "op": "replace",
+          "path": "/tokens",
+          "value": 851
+        }
+      ],
+      "case": "html_article",
+      "elapsed_ms": 13.783,
+      "final_evidence_unchanged": true,
+      "estimated_reduction_percent": 54.22,
+      "no_model_request": true
+    },
+    {
+      "before_bytes": 15906,
+      "after_bytes": 4327,
+      "before_tokens": 3985,
+      "after_tokens": 987,
+      "token_basis": "cl100k_estimate",
+      "final_evidence_preserved": false,
+      "excerpt_count": 1,
+      "context_digest": "d3ce5fa564aff5025f11c8b7b960e18069f0837cad2794bad6c9b1398160e437",
+      "manifest_patch": [
+        {
+          "op": "replace",
+          "path": "/bytes",
+          "value": 4327
+        },
+        {
+          "op": "replace",
+          "path": "/tokens",
+          "value": 987
+        }
+      ],
+      "case": "multilingual",
+      "elapsed_ms": 11.928,
+      "final_evidence_unchanged": true,
+      "estimated_reduction_percent": 75.23,
+      "no_model_request": true
+    },
+    {
+      "before_bytes": 10059,
+      "after_bytes": 6314,
+      "before_tokens": 2285,
+      "after_tokens": 1470,
+      "token_basis": "cl100k_estimate",
+      "final_evidence_preserved": false,
+      "excerpt_count": 1,
+      "context_digest": "aa6a71d343b558183d231fe80080bccb237aacc965b2ecca4b6b661244edaf43",
+      "manifest_patch": [
+        {
+          "op": "replace",
+          "path": "/bytes",
+          "value": 6314
+        },
+        {
+          "op": "replace",
+          "path": "/tokens",
+          "value": 1470
+        }
+      ],
+      "case": "unique_facts",
+      "elapsed_ms": 90.682,
+      "final_evidence_unchanged": true,
+      "estimated_reduction_percent": 35.67,
+      "no_model_request": true
+    }
+  ],
+  "combined_estimated_reduction_percent": 58.59,
+  "serialized_result_bytes": 1983
+}

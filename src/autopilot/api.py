@@ -113,10 +113,13 @@ def create_app(settings=None, *, worker_only=False, run_engine=True, models=None
                 await asyncio.gather(task, return_exceptions=True)
             if lock:
                 lock.release()
+            close_models = getattr(engine.models, "close", None)
+            if close_models:
+                close_models()
 
     app = FastAPI(
         title="Extreme Autopilot",
-        version="0.3.0",
+        version="0.4.0",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -182,6 +185,28 @@ def create_app(settings=None, *, worker_only=False, run_engine=True, models=None
     @app.get("/api/jobs")
     async def jobs():
         return store.jobs()
+
+    @app.get("/api/economy")
+    async def economy_status():
+        economy = getattr(engine.models, "economy", None)
+        if economy is None:
+            return {"enabled": False, "install": "Install requirements-economy.lock.txt on the coordinator"}
+        from autopilot.economy import library_status
+
+        return {
+            "enabled": True,
+            "libraries": library_status(),
+            "plan_cache_ttl": economy.ttl,
+            "context_text_limit": economy.text_limit,
+            "token_basis": economy.meter.count("")["basis"],
+            "automatic_provider_retries": False,
+        }
+
+    @app.get("/api/jobs/{job_id}/economy")
+    async def economy_job(job_id: str):
+        store.job(job_id)
+        economy = getattr(engine.models, "economy", None)
+        return economy.summary(job_id) if economy else {"enabled": False}
 
     @app.get("/api/jobs/{job_id}")
     async def job(job_id: str):

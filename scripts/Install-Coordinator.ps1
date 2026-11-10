@@ -5,7 +5,7 @@ Push-Location $projectRoot
 try {
     & $Python -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw 'Python environment creation failed' }
-    & .\.venv\Scripts\python.exe -m pip install --requirement requirements-coordinator.lock.txt
+    & .\.venv\Scripts\python.exe -m pip install --requirement requirements-economy.lock.txt
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
     & .\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
     if ($LASTEXITCODE -ne 0) { throw 'Package installation failed' }

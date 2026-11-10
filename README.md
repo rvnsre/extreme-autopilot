@@ -4,7 +4,7 @@ One brief, autonomous execution on a dedicated Windows, Linux or macOS worker. A
 
 **Status: implementation preview, not an accepted production release.** Live OpenAI/Ollama + dedicated Windows VM acceptance and the full 24-hour soak must pass before claiming the complete plan is verified. See [VALIDATION.md](VALIDATION.md).
 
-v0.3.0 adds native platform adapters, Unix installers and three-OS CI. See [platform setup and limitations](docs/PLATFORMS.md). Linux desktop requires X11; macOS native GUI requires initial permissions and dedicated-worker acceptance. The v0.2.0 [correctness/recovery audit](AUDIT.md) remains applicable. Upgrade both services while stopped.
+v0.4.0 adds a coordinator-only [token economy layer](docs/ECONOMY.md): 22 direct library integrations, 38 documented changes, local context extraction/ranking, job-scoped plan caching and measured diagnostics. See [platform setup and limitations](docs/PLATFORMS.md) for Windows/Linux/macOS. The v0.2.0 [correctness/recovery audit](AUDIT.md) remains applicable. Upgrade both services while stopped.
 
 ## What it does
 
@@ -46,6 +46,8 @@ Coordinator: loopback HTTP port 8765 with `Authorization: Bearer EA_API_TOKEN`. 
 | Method | Coordinator route | Purpose |
 |---|---|---|
 | GET | `/api/health` | Worker connectivity |
+| GET | `/api/economy` | Installed token-economy integrations and settings |
+| GET | `/api/jobs/{id}/economy` | Private context, cache and provider-token counters |
 | GET | `/api/openapi.json` | Machine-readable schema |
 | POST | `/api/jobs` | `{ "prompt": "...200+ codepoints...", "budget_usd": 5, "max_seconds": 86400 }` |
 | GET | `/api/jobs` | Most recent 100 jobs |
@@ -66,7 +68,7 @@ Cancellation is cooperative: running process trees are stopped on the next heart
 ## Development
 
 ```powershell
-python -m pip install -e ".[dev,worker]"
+python -m pip install -e ".[dev,worker,economy]"
 ruff check .
 pytest --cov=autopilot --cov-report=term-missing
 cd web

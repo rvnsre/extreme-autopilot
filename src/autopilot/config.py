@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     input_usd_per_million: float = Field(default=0, ge=0)
     output_usd_per_million: float = Field(default=0, ge=0)
     cloud_output_tokens: int = Field(default=2048, ge=256, le=16384)
+    economy_enabled: bool = True
+    economy_text_limit: int = Field(default=2400, ge=800, le=12000)
+    economy_plan_ttl: int = Field(default=120, ge=1, le=3600)
+    economy_plan_tokens: int = Field(default=1024, ge=256, le=16384)
+    economy_decision_tokens: int = Field(default=1024, ge=256, le=16384)
+    economy_verdict_tokens: int = Field(default=512, ge=256, le=16384)
     image_token_reserve: int = Field(default=8192, ge=1024, le=65536)
     max_steps: int = Field(default=2000, ge=1, le=10000)
     headless: bool = False

@@ -3,7 +3,7 @@ import json
 import time
 
 from autopilot.executor import tool_catalog
-from autopilot.models import Models, ModelUnavailable
+from autopilot.models import ModelDeferred, Models, ModelUnavailable
 from autopilot.policy import fingerprint, read_only, validate_authority
 from autopilot.schema import Action, Decision, Finish, Plan, Verdict
 from autopilot.store import Store
@@ -129,6 +129,7 @@ class Engine:
     async def ask(self, job, instruction, packet, schema, cloud_first=False, cloud_required=False):
         routes = [True] if cloud_required else ([True, False] if cloud_first else [False, True])
         failures = []
+        deferred = False
         for cloud in routes:
             current = self.store.job(job["id"])
             if (
@@ -142,8 +143,13 @@ class Engine:
                 outgoing["vision_unavailable"] = "Use only text evidence; do not infer unseen pixels."
             try:
                 return await self.models.generate(job["id"], SYSTEM + instruction, outgoing, schema, cloud)
+            except ModelDeferred as exc:
+                deferred = True
+                failures.append(str(exc))
             except ModelUnavailable as exc:
                 failures.append(str(exc))
+        if deferred:
+            raise ModelDeferred("; ".join(failures))
         raise ModelUnavailable("; ".join(failures))
 
     async def tick(self):
@@ -251,6 +257,8 @@ class Engine:
                 raise ValueError("Repeated operation without progress")
             self.store.enqueue(job["id"], action.model_dump())
             self.store.update(job["id"], errors=0)
+        except ModelDeferred:
+            return  # Keep the task bounded by its deadline; cooldown is not a failed tool attempt.
         except Exception as exc:
             failures = job["errors"] + 1
             with self.store.tx() as db:

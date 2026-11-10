@@ -5,6 +5,15 @@ import "./style.css";
 import { serialPoll } from "./polling";
 
 type Artifact = { action_id: string; path: string; sha256: string };
+type EconomySummary = {
+  totals?: {
+    before_tokens: number;
+    after_tokens: number;
+    cache_hit: number;
+    provider_cached_tokens: number;
+    measurements: number;
+  };
+};
 type Report = {
   summary: string;
   artifacts: Artifact[];
@@ -47,6 +56,7 @@ function App() {
   const [events, setEvents] = useState<Event[]>([]),
     [worker, setWorker] = useState(false),
     [screen, setScreen] = useState("");
+  const [economy, setEconomy] = useState<EconomySummary | null>(null);
   const screenRef = useRef("");
   const cursorRef = useRef(0);
   const selectedRef = useRef(selected);
@@ -103,6 +113,7 @@ function App() {
     setEvents([]);
     cursorRef.current = 0;
     setJob(null);
+    setEconomy(null);
     setScreen("");
     if (screenRef.current) {
       URL.revokeObjectURL(screenRef.current);
@@ -112,7 +123,7 @@ function App() {
     return serialPoll(
       async (signal) => {
         const revision = revisionRef.current;
-        const [a, b] = await Promise.all([
+        const [a, b, c] = await Promise.all([
           api("/jobs/" + selected, { signal }),
           api(
             "/jobs/" +
@@ -121,11 +132,14 @@ function App() {
               cursorRef.current,
             { signal },
           ),
+          api("/jobs/" + selected + "/economy", { signal }),
         ]);
         const detail: Job = await a.json();
         const log: Event[] = await b.json();
+        const costs: EconomySummary = await c.json();
         if (signal.aborted || revision !== revisionRef.current) return;
         setJob(detail);
+        setEconomy(costs);
         if (log.length) {
           cursorRef.current = Math.max(
             cursorRef.current,
@@ -446,6 +460,25 @@ function App() {
                 </small>
               </section>
             </div>
+            {economy?.totals && (
+              <section className="card">
+                <h2>Token qənaəti</h2>
+                <p>
+                  Ölçülmüş kontekst:{" "}
+                  {economy.totals.before_tokens.toLocaleString()} →{" "}
+                  {economy.totals.after_tokens.toLocaleString()} təxmini token.
+                </p>
+                <p>
+                  Plan keşindən istifadə: {economy.totals.cache_hit}.
+                  Provayderin bildirdiyi keş tokenləri:{" "}
+                  {economy.totals.provider_cached_tokens.toLocaleString()}.
+                </p>
+                <small className="muted">
+                  Son 100 ölçmə. Dollar qənaəti zəmanəti deyil; sayğacın əsası
+                  tokenizer sazlamasından asılıdır.
+                </small>
+              </section>
+            )}
             {job.report && (
               <section className="card report">
                 <p className="eyebrow">YEKUN HESABAT</p>

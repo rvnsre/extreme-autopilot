@@ -2,6 +2,14 @@
 
 This is a source implementation preview. It must not be represented as a zero-error or production-accepted autonomous agent.
 
+## v0.4.0 economy verification
+
+Windows/Python 3.11 local verification: **147 Python tests passed**, 3 platform/opt-in tests skipped, one upstream Starlette/httpx warning; backend line coverage **75%**, economy module **90%**. Ruff/formatting, `pip check`, 6 frontend tests and TypeScript/Vite build passed. The 22 direct economy integrations are pinned in package metadata and the complete portable lock file. Three-OS CI is pending publication.
+
+After explicit tokenizer warmup, four synthetic fixtures measured **58.59% combined estimated context-token reduction** using `cl100k_base` (10,090 → 4,178 estimated tokens). Individual reductions were 55.63%, 54.22%, 75.23% and 35.67%; processing plus the final-evidence preservation check took approximately 12–336 ms per case on this machine. These are synthetic context estimates, not live-task accuracy, provider dollars saved or exact token counts for arbitrary models. No model request was made. See [benchmark JSON](docs/benchmarks/economy-v040.json) and [implementation/38 changes](docs/ECONOMY.md).
+
+Regression tests cover exact job/model/context cache isolation, concurrent plan coalescing and one billing settlement, no action/verdict cache reuse, cancellation before reuse, cooldown deferral without a false failure, corruption/decompression/expiry guards, unchanged authority/receipt IDs including large integers, non-lossy final verification, HTML/table/code extraction and private authenticated diagnostics. Live model/VM, native macOS GUI and full 24-hour acceptance remain pending.
+
 ## v0.3.0 platform verification
 
 On Windows/Python 3.11, **118 tests passed**, 3 platform/opt-in tests skipped and one upstream Starlette/httpx warning remained. Ruff and formatting checks passed; 6 frontend tests and the production build passed.
