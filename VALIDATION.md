@@ -20,10 +20,11 @@ Windows / Python 3.11.9 verification on 2026-11-10:
 
 ## GitHub Actions verification
 
-The v0.2.0 CI result is pending publication. The following result is historical v0.1.0 evidence only: [quality checks run 42721451958](https://github.com/rvnsre/extreme-autopilot/actions/runs/42721451958), source commit `f35a2e492e2cf01f9ec091db5b387ebad82b11e6`.
+[v0.2.0 quality checks run 42726783605](https://github.com/rvnsre/extreme-autopilot/actions/runs/42726783605) completed successfully for source commit `96aa005b1755be3d9203a9a06753496338489bbe`.
 
 - All four Windows/Linux × Python 3.11/3.12 jobs passed backend tests, frontend tests, formatting checks and package builds.
-- The separate Windows real-Chromium job passed `test_real_browser_elements_keyboard_freshness_and_screen` (**1 passed**), exercising real page navigation, element filling/focus, keyboard activation, stale-frame rejection and JPEG observation.
+- Windows jobs passed **104 Python tests** with one opt-in browser skip; Linux jobs passed **103** with two skips (the additional test requires the Windows process API). Each matrix job passed **6 frontend tests** and the full npm audit with **zero findings**. Measured backend line coverage was 74% on Windows and 70% on Linux.
+- The separate Windows real-Chromium job passed `test_real_browser_elements_keyboard_freshness_and_screen` (**1 passed**), exercising real page navigation, element filling/focus, keyboard activation, DOM/focus freshness rejection and JPEG observation.
 - This verifies the browser executor with a synthetic website on a hosted runner. It does not verify real Ollama/OpenAI decisions, authenticated production websites or a user's dedicated VM.
 
 ## Required live acceptance (not yet completed)
