@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+<title id="title">Extreme Autopilot workflow illustration</title>
+<desc id="desc">Local-first planning. Isolated execution. Evidence at the end. A conceptual workflow, not an application screenshot.</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#111D30"/><stop offset="1" stop-color="#0A101C"/></linearGradient></defs>
+<rect x="1" y="1" width="1198" height="338" rx="22" fill="url(#bg)" stroke="#2A3A50"/>
+<path d="M780 1V339M1 260H1199" fill="none" stroke="#26354A"/>
+<path d="M825 38H1155M825 77H1155M825 116H1155M825 155H1155M825 194H1155M825 233H1155" stroke="#1A283B"/>
+<g font-family="Segoe UI,Arial,sans-serif"><text x="42" y="43" fill="#63D5FA" font-size="13" font-weight="600" letter-spacing="2">PLAN / EXECUTE / VERIFY</text>
+<text x="40" y="109" fill="#F2F6FC" font-size="53" font-weight="700" letter-spacing="-1.5">One brief.</text>
+<text x="40" y="171" fill="#F2F6FC" font-size="53" font-weight="700" letter-spacing="-1.5">A traceable result.</text>
+<text x="42" y="216" fill="#ADBFD4" font-size="18">Local-first planning. Isolated execution. Evidence at the end.</text>
+<circle cx="46" cy="300" r="4" fill="#63D5FA"/><text x="61" y="306" fill="#D4DEEB" font-size="16">Browser + desktop</text>
+<circle cx="287" cy="300" r="4" fill="#63D5FA"/><text x="302" y="306" fill="#D4DEEB" font-size="16">Budget controls</text>
+<circle cx="528" cy="300" r="4" fill="#63D5FA"/><text x="543" y="306" fill="#D4DEEB" font-size="16">Result verification</text>
+<path d="M835 80H881Q899 80 899 98V112Q899 130 918 130H1080Q1100 130 1100 150V168Q1100 188 1080 188H916Q898 188 898 208V222Q898 238 916 238H1124" fill="none" stroke="#63D5FA" stroke-opacity=".45" stroke-width="2"/>
+<rect x="820" y="58" width="257" height="47" rx="12" fill="#142135" stroke="#35485F"/><circle cx="843" cy="81" r="12" fill="#0C1625" stroke="#63D5FA"/><text x="843" y="86" text-anchor="middle" fill="#63D5FA" font-size="12">1</text><text x="866" y="87" fill="#E4EDF9" font-size="14" font-weight="600" letter-spacing="1">BRIEF</text>
+<rect x="951" y="110" width="223" height="47" rx="12" fill="#142135" stroke="#35485F"/><circle cx="974" cy="133" r="12" fill="#0C1625" stroke="#63D5FA"/><text x="974" y="138" text-anchor="middle" fill="#63D5FA" font-size="12">2</text><text x="997" y="139" fill="#E4EDF9" font-size="14" font-weight="600" letter-spacing="1">WORKER</text>
+<rect x="894" y="218" width="257" height="47" rx="12" fill="#142135" stroke="#35485F"/><circle cx="917" cy="241" r="12" fill="#0C1625" stroke="#63D5FA"/><text x="917" y="246" text-anchor="middle" fill="#63D5FA" font-size="12">3</text><text x="940" y="247" fill="#E4EDF9" font-size="14" font-weight="600" letter-spacing="1">EVIDENCE</text>
+<text x="830" y="306" fill="#8295AF" font-size="12" letter-spacing="1.3">A CLEAR WORKFLOW, AT A GLANCE</text></g></svg>

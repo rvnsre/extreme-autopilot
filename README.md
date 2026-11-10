@@ -1,95 +1,113 @@
 # Extreme Autopilot
 
-One brief, autonomous execution on a dedicated Windows, Linux or macOS worker. Azərbaycan dilində panel, CLI and authenticated API.
+<p align="center">
+  <img src="docs/assets/readme-banner.png" alt="Extreme Autopilot: One brief. A traceable result. Conceptual workflow illustration." width="1200">
+</p>
 
-**Status: implementation preview, not an accepted production release.** Live OpenAI/Ollama + dedicated Windows VM acceptance and the full 24-hour soak must pass before claiming the complete plan is verified. See [VALIDATION.md](VALIDATION.md).
+**One task brief. Local-first planning. Isolated execution with evidence.**
 
-v0.4.0 adds a coordinator-only [token economy layer](docs/ECONOMY.md): 22 direct library integrations, 38 documented changes, local context extraction/ranking, job-scoped plan caching and measured diagnostics. See [platform setup and limitations](docs/PLATFORMS.md) for Windows/Linux/macOS. The v0.2.0 [correctness/recovery audit](AUDIT.md) remains applicable. Upgrade both services while stopped.
+Python **3.11+** · Node.js **22.12+** · Windows / Linux / macOS · [MIT](LICENSE)
 
-## What it does
+[![CI](https://github.com/rvnsre/extreme-autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/rvnsre/extreme-autopilot/actions/workflows/ci.yml)
 
-- Accepts one trimmed brief of 200–50,000 Unicode codepoints. No runtime questions or approval inbox.
-- Plans verifiable goals, uses local Ollama first and OpenAI for escalation/vision/independent final verification.
-- Executes sequential browser, native desktop, file and bounded process tools in a dedicated worker.
-- Uses API/text, elements and keyboard first; mouse is fallback. Observations carry freshness identifiers.
-- Journals commands before execution, caches results before acknowledgement and fences uncertain actions after a crash.
-- Retains a compact per-goal evidence index across long runs, even after earlier actions leave recent model context.
-- Tracks cloud reservations/usage, stops new paid requests at the configured application budget and exposes reports/artifacts.
-- Provides the same job lifecycle through the panel, CLI and HTTP API. Default: 24 hours, $5, 2,000 tool operations.
-- Uses idempotent job submission and a single active worker-session lease. Uncertain input outcomes prohibit further mutations in that task and are reported as partial.
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Token economy](#token-economy) · [Documentation](#documentation)
+
+> **Project status:** Implementation preview. Synthetic CI passes; live model/VM, native macOS GUI and full 24-hour acceptance remain pending. [Verification details](VALIDATION.md).
+
+## Built for one-brief tasks
+
+Submit a **200–50,000 Unicode-codepoint brief** once. The coordinator plans the work, a dedicated worker runs the tools, and the agent checks the results without asking follow-up questions during execution. Unresolved work is reported as partial or blocked.
+
+| Plan locally | Execute in isolation | Check the result |
+| --- | --- | --- |
+| Ollama handles routine planning; OpenAI handles escalation, vision and final verification. | Sequential browser, API, desktop, file and process tools run on a dedicated worker. | Receipts, readbacks, tests and an independent verifier support the final report. |
+
+## How it works
+
+```text
+Brief → Plan → Tool execution → Observation → Verification → Report + artifacts
+                 ↑                    |
+                 └── next step ──────┘
+```
+
+The host runs FastAPI, SQLite, Ollama and the Azerbaijani dashboard. The worker uses a separate authenticated HTTPS connection. Command journals, idempotent submission and a single worker lease support recovery; uncertain effects are fenced instead of blindly replayed.
+
+| Default | Value | What to know |
+| --- | --- | --- |
+| Task duration | 24 hours | The task's original deadline bounds execution. |
+| Cloud budget | US$5 per task | Application accounting; not a hard provider billing cap. |
+| Tool operations | 2,000 | Configurable ceiling, with final verification still required. |
+| Worker concurrency | One active task | Other tasks remain queued. |
 
 ## Quick start
 
-Python 3.11+ and Node 22.12+ (22/24/26 supported release lines) are required. Install from the source checkout:
+Clone the source, then choose the coordinator installer for your operating system:
 
-```powershell
-.\scripts\Install-Coordinator.ps1
+```bash
+git clone https://github.com/rvnsre/extreme-autopilot.git
+cd extreme-autopilot
 ```
 
-Follow [the setup guide](docs/SETUP.md) to configure two tokens, model IDs, current pricing and the separate worker VM. Then open [the local panel](http://127.0.0.1:8765). The panel token stays only in page memory.
+<details open>
+<summary><strong>Windows / PowerShell</strong></summary>
 
 ```powershell
-# Use the venv executable directly; shell activation is optional.
-.\.venv\Scripts\autopilot.exe --env-file C:\AutopilotData\coordinator.env doctor --models
-.\.venv\Scripts\autopilot.exe --env-file C:\AutopilotData\coordinator.env submit --file examples\code.txt
-.\.venv\Scripts\autopilot.exe --env-file C:\AutopilotData\coordinator.env jobs
-.\.venv\Scripts\autopilot.exe --env-file C:\AutopilotData\coordinator.env status JOB_ID
-.\.venv\Scripts\autopilot.exe --env-file C:\AutopilotData\coordinator.env report JOB_ID
+.scriptsInstall-Coordinator.ps1
 ```
 
-The frontend build is included in built wheels when `npm run build` is run **before** `python -m build`. Source checkouts must build it once. There are no remote fonts, scripts or CDN assets in the panel.
+</details>
 
-## API
+<details>
+<summary><strong>Linux / macOS</strong></summary>
 
-Coordinator: loopback HTTP port 8765 with `Authorization: Bearer EA_API_TOKEN`. VM gateway: HTTPS port 8766 with a separate `EA_WORKER_TOKEN`; it exposes **only** worker routes.
+```bash
+bash scripts/install.sh coordinator
+```
 
-| Method | Coordinator route | Purpose |
-|---|---|---|
-| GET | `/api/health` | Worker connectivity |
-| GET | `/api/economy` | Installed token-economy integrations and settings |
-| GET | `/api/jobs/{id}/economy` | Private context, cache and provider-token counters |
-| GET | `/api/openapi.json` | Machine-readable schema |
-| POST | `/api/jobs` | `{ "prompt": "...200+ codepoints...", "budget_usd": 5, "max_seconds": 86400 }` |
-| GET | `/api/jobs` | Most recent 100 jobs |
-| GET | `/api/jobs/{id}` | State, plan, usage and report |
-| POST | `/api/jobs/{id}/cancel` | Stop dispatch and signal cancellation |
-| GET | `/api/jobs/{id}/events?after=N` | Cursor-based private event log |
-| GET | `/api/jobs/{id}/stream` | Authenticated SSE progress metadata |
-| GET | `/api/jobs/{id}/screen` | Latest collected JPEG; not live video |
-| GET | `/api/jobs/{id}/report` | Final structured report |
-| GET | `/api/jobs/{id}/artifacts/{action_id}` | Captured output file |
+</details>
 
-States: `queued → running ↔ recovering → completed / partial / blocked / failed / cancelled`.
-`POST /api/jobs` accepts an optional `Idempotency-Key` (16–128 ASCII letters/digits/hyphens/underscores). Reuse the exact key, brief and limits to retry a lost response without creating a second job; changed payloads return 409. The panel retains the key while retrying its current submission; a full page reset may discard it, so inspect existing jobs before manually resubmitting. CLI failures print the key for `submit --request-key KEY` retries.
+**Before submitting a task:** follow [SETUP.md](docs/SETUP.md) and [PLATFORMS.md](docs/PLATFORMS.md) to configure models, current prices, two different tokens, TLS and a dedicated worker. Keep the env file outside the checkout. The installer alone does not create or license a VM.
 
-Worker protocol 2 requires `X-Worker-Session` on poll/heartbeat/result calls; the supplied worker handles it automatically. Another live session receives 409. Lease expiry is 45 seconds; an interrupted command remains subject to journal/redelivery checks. `/api/health` returns 503 if the scheduler has stopped. Reports expose pending operations and unsettled billing instead of implying that cancellation undoes completed effects.
-Cancellation is cooperative: running process trees are stopped on the next heartbeat (normally ≤3 seconds plus network latency); in-flight UI/library operations may run until their bounded timeout. Already submitted external side effects cannot be undone.
-
-## Development
+Then, on Windows, check the configured models and submit the supplied code example:
 
 ```powershell
-python -m pip install -e ".[dev,worker,economy]"
-ruff check .
-pytest --cov=autopilot --cov-report=term-missing
-cd web
-npm ci
-npm test
-npm run build
-cd ..
-python -m build
-python scripts/soak.py --hours 24 --out C:/AutopilotData/soak.json
+..venvScriptsautopilot.exe --env-file C:AutopilotDatacoordinator.env doctor --models
+..venvScriptsautopilot.exe --env-file C:AutopilotDatacoordinator.env submit --file examplescode.txt
 ```
 
-`tests/test_browser_live.py` is opt-in via `EA_TEST_BROWSER=1` after installing Chromium. It exercises a real browser with a synthetic local website and no paid model. It does not count as live model acceptance.
+On Linux/macOS, use `.venv/bin/autopilot` and an absolute Unix env-file path. Once the coordinator is serving, open the [local dashboard](http://127.0.0.1:8765).
 
-## Practical boundaries
+## Token economy
 
-Arbitrary Python/Node code runs with the **worker OS user's privileges**. Workspace path checks are not an OS sandbox. A dedicated disposable VM is the security boundary; do not run the worker on your everyday desktop. Initial permission quotes and destination checks are defense in depth, not proof against all prompt injection. [SECURITY.md](SECURITY.md) explains the trust model and known limitations.
+v0.4.0 integrates **22 local libraries and 38 documented improvements**: context extraction and ranking, exact job-scoped plan caching, concurrent-call coalescing, output ceilings and private token diagnostics. Action decisions and final verdicts are never reused from the plan cache.
 
-Only explicit external destinations in the initial brief can be used for external-write intent. Missing permissions, credentials, CAPTCHAs and unresolved obstacles produce partial/blocked reports without asking another question. Model verification reduces false completion; it cannot guarantee semantic correctness.
+Four synthetic text fixtures measured **58.59% estimated context reduction** with `cl100k_base`. This is not a live-task accuracy score, an exact count for every model, or measured provider dollar savings. Final evidence bypasses the lossy reducer.
 
-Cloud cost is calculated with configured per-model prices and provider usage. Missing usage or a lost response is conservatively charged at the reservation. Prices must be kept current; the application budget is not a provider billing guarantee. Local inference still consumes hardware/electricity. No speed or zero-error guarantee is claimed.
+[Read the implementation and settings →](docs/ECONOMY.md) · [Inspect the measurement data →](docs/benchmarks/economy-v040.json)
 
-Captured individual artifacts are limited to 512 KB; file-write calls to 64 KB. Browser and process outputs are bounded. Large deliverables remain in the VM workspace and require a separately scoped export workflow; v0.1 does not silently upload arbitrary directories.
+## Platforms and boundaries
 
-Protocol references: [OpenAI JSON/structured output](https://developers.openai.com/api/docs/guides/structured-outputs), [Ollama chat](https://docs.ollama.com/api/chat), [Playwright Python](https://playwright.dev/python/docs/intro), [Windows UI Automation via pywinauto](https://pywinauto.readthedocs.io/en/latest/getting_started.html).
+| Platform | Native desktop requirement |
+| --- | --- |
+| Windows | An unlocked interactive session. |
+| Linux | X11; native Wayland desktop input is unsupported. |
+| macOS | Initial Accessibility, Screen Recording and Automation permissions; validate on the actual worker. |
+
+Use a disposable VM or dedicated machine with task-only accounts. Generated code runs as the worker's OS user; workspace checks are not an OS sandbox. Missing credentials, CAPTCHAs or unresolved obstacles result in a report rather than a request for more input.
+
+Captured artifacts are limited to **512 KB per file** and file-write calls to **64 KB**. Cancellation is cooperative and cannot undo an external action already submitted. See the [trust model](SECURITY.md).
+
+## Documentation
+
+| Start here | Reference and evidence |
+| --- | --- |
+| [Host, worker, TLS and accounts](docs/SETUP.md) | [API, CLI, development and operating limits](docs/OPERATIONS.md) |
+| [Windows / Linux / macOS setup](docs/PLATFORMS.md) | [Validation and remaining acceptance work](VALIDATION.md) |
+| [Token-economy settings and library map](docs/ECONOMY.md) | [Correctness and recovery audit](AUDIT.md) |
+| [Synthetic research brief](examples/research.txt) · [Code brief](examples/code.txt) | [Security](SECURITY.md) · [License](LICENSE) |
+
+Found a problem? [Open an issue](https://github.com/rvnsre/extreme-autopilot/issues/new) with your OS, package version and redacted error. Keep keys, private prompts and screenshots out of public reports.
+
+---
+
+**More from rvnsre:** [MedResearch](https://github.com/rvnsre/medresearch-cli) · [ForgeFlow CLI](https://github.com/rvnsre/forgeflow-cli) · [LocalDesk Agent](https://github.com/rvnsre/localdesk-agent)
