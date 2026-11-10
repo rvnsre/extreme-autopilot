@@ -464,7 +464,7 @@ function App() {
               <section className="card">
                 <h2>Token qənaəti</h2>
                 <p>
-                  Ölçülmüş kontekst:{" "}
+                  Ölçülmüş mətn konteksti:{" "}
                   {economy.totals.before_tokens.toLocaleString()} →{" "}
                   {economy.totals.after_tokens.toLocaleString()} təxmini token.
                 </p>

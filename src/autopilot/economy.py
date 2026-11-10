@@ -310,13 +310,17 @@ class Economy:
                 sorted(outgoing["tools"]) if planning and not final else strip_titles(outgoing["tools"])
             )
         encoded = canonical(outgoing)
-        before, after = self.meter.count(original), self.meter.count(encoded)
+        # Image base64 is transported as an image, never as billable text.
+        text_before = canonical({k: v for k, v in packet.items() if k != "latest_screen"})
+        text_after = canonical({k: v for k, v in outgoing.items() if k != "latest_screen"})
+        before, after = self.meter.count(text_before), self.meter.count(text_after)
         report = {
             "before_bytes": len(original.encode()),
             "after_bytes": len(encoded.encode()),
             "before_tokens": before["tokens"],
             "after_tokens": after["tokens"],
             "token_basis": after["basis"],
+            "image_present": bool(packet.get("latest_screen")),
             "final_evidence_preserved": final,
             "excerpt_count": len(notes),
             "context_digest": blake3.blake3(encoded.encode()).hexdigest(),

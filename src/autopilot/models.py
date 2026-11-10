@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -129,7 +130,26 @@ class Models:
             if economy
             else self.s.cloud_output_tokens
         )
-        if len(content.encode()) > 180000:
+        image = packet.get("latest_screen")
+        if image:
+            if not cloud:
+                raise ModelUnavailable("Local text adapter cannot consume images")
+            try:
+                if not isinstance(image, str) or len(image) > 344000:
+                    raise ValueError("Oversized image")
+                raw_image = base64.b64decode(image, validate=True)
+                if (
+                    len(raw_image) > 256000
+                    or not raw_image.startswith(b"\xff\xd8")
+                    or not raw_image.endswith(b"\xff\xd9")
+                ):
+                    raise ValueError("Invalid JPEG transport")
+            except (ValueError, TypeError) as exc:
+                raise ModelUnavailable("Image must be a valid bounded JPEG transport") from exc
+        text_content = json.dumps(
+            {k: v for k, v in packet.items() if k != "latest_screen"}, ensure_ascii=False
+        )
+        if len(text_content.encode()) > 180000:
             raise ModelUnavailable("Model context exceeds application limit")
         if not cloud:
             if not self.s.local_model:

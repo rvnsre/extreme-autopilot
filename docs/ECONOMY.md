@@ -83,7 +83,7 @@ These are direct integrations, not transitive-package counts. Their installed ve
 19. Independent final verification bypasses the lossy reducer and result cache.
 20. Explicit one-time tokenizer warmup followed by network-free estimation.
 21. Labeled UTF-8 upper-bound fallback when tokenizer assets are absent.
-22. Bounded token-count LRU to avoid repeated encoding work.
+22. Bounded token-count LRU; image base64 is excluded from text-token estimates and transported under its own size/format guard.
 23. Exact plan caching isolated by job, route/model, full context, system instruction and schema.
 24. Concurrent identical planning calls share one in-flight generation.
 25. Typed, versioned cache envelopes, integrity hashes and independent schema validation.
@@ -108,6 +108,8 @@ Only `Plan` responses can be cached. Action decisions, tool effects, screenshots
 Only observation `text` fields in recent action results are reduced. Model inputs contain explicit excerpt/provenance markers. The original durable receipts/artifacts stay in the coordinator database. The final verifier receives the existing engine's bounded evidence packet unchanged by this reducer; it does not suddenly receive every byte of an arbitrarily large source. A source excerpt can omit relevant facts, and a model can still reason incorrectly. This is why live task-quality evaluation remains required.
 
 The static system/schema prefix is serialized consistently. Provider cache hits are observed from usage, not guaranteed. No new retention/cache-write request option is enabled. Current provider caching and billing behavior depends on the selected model; consult [official OpenAI prompt-caching documentation](https://developers.openai.com/api/docs/guides/prompt-caching). Reported cached input is charged at the operator's ordinary input rate in the conservative application ledger; this may overestimate a discounted provider bill. It does not account for every provider-specific surcharge and is not a hard billing cap.
+
+Context token counters describe **text only**. Images use the existing separate configured image reserve and provider-reported usage. A valid JPEG up to 256,000 bytes is not incorrectly rejected merely because its base64 exceeds the 180 KB text-context limit. Bad base64, oversized payloads or missing JPEG transport markers are rejected before a paid call; transport validation does not certify image content or model vision quality.
 
 An HTTP timeout is not automatically retried. Existing unknown billing reservations remain conservative. The engine may attempt a new planning/generation step after cooldown within the task's original budget/deadline; the cooldown is not an exactly-once provider billing guarantee. Output ceilings can cause some complex outputs to truncate; these are rejected rather than accepted as partial JSON. Disable economy mode or raise the corresponding `EA_ECONOMY_*_TOKENS` setting (and `EA_CLOUD_OUTPUT_TOKENS` ceiling) if your acceptance tests require longer structured outputs. Stage settings accept 256–16,384 tokens; local generation retains its existing 2,048-token maximum.
 

@@ -1,7 +1,10 @@
 """Loss boundaries, cache isolation, billing, and real local extraction integrations."""
 
 import asyncio
+import base64
+import io
 import json
+import random
 
 import pytest
 from fastapi.testclient import TestClient
@@ -105,6 +108,13 @@ def test_final_verification_never_gets_lossy_excerpt(economy):
     source = packet("A fact and its caveat.\n\n" * 1000)
     prepared, report = economy.prepare(source, final=True)
     assert prepared == source and report["excerpt_count"] == 0
+
+
+def test_image_transport_is_never_counted_as_text_tokens(economy):
+    source = {"original_brief": "Inspect the image.", "latest_screen": "A" * 250000}
+    prepared, report = economy.prepare(source, final=True)
+    assert prepared == source and report["image_present"]
+    assert report["before_tokens"] < 200 and report["after_tokens"] < 200
 
 
 def test_schema_title_fields_and_default_payloads_survive(economy):
@@ -230,6 +240,42 @@ class CountedModels(Models):
                 }
             ],
         }
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_large_real_jpeg_has_separate_text_and_transport_limits(settings, store, brief, enabled):
+    from PIL import Image
+
+    settings.economy_enabled = enabled
+    stream = io.BytesIO()
+    Image.frombytes("RGB", (640, 480), random.Random(1).randbytes(640 * 480 * 3)).save(
+        stream, "JPEG", quality=80
+    )
+    raw = stream.getvalue()
+    assert 135000 < len(raw) <= 256000
+    jpeg = base64.b64encode(raw).decode()
+    job = store.create(brief)
+    model = CountedModels(settings, store)
+    try:
+        assert asyncio.run(model.generate(job["id"], "JSON", {"latest_screen": jpeg}, Plan, True)).goals
+        content = model.bodies["messages"][1]["content"]
+        assert jpeg not in content[0]["text"]
+        assert content[1]["image_url"]["url"].endswith(jpeg)
+    finally:
+        model.close()
+
+
+@pytest.mark.parametrize("image", ["invalid-base64", base64.b64encode(b"not jpeg").decode(), "A" * 344001])
+def test_bad_images_rejected_before_paid_request(settings, store, brief, image):
+    settings.economy_enabled = True
+    job = store.create(brief)
+    model = CountedModels(settings, store)
+    try:
+        with pytest.raises(ModelUnavailable, match="JPEG"):
+            asyncio.run(model.generate(job["id"], "JSON", {"latest_screen": image}, Plan, True))
+        assert model.calls == 0 and store.job(job["id"])["spent"] == 0
+    finally:
+        model.close()
 
 
 def test_concurrent_plan_requests_coalesce_and_bill_once(settings, store, brief):
