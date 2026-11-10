@@ -5,6 +5,7 @@ import ipaddress
 import json
 import secrets
 import ssl
+import sys
 import threading
 from pathlib import Path
 
@@ -71,7 +72,7 @@ async def doctor(s, models=False):
                 response.raise_for_status()
                 data = response.json()
                 checks["ollama_local_model_available"] = not (
-                    data.get("remote_model") or data.get("remote_host") or "cloud" in s.local_model.lower()
+                    data.get("remote_model") or data.get("remote_host")
                 )
                 checks["ollama_capabilities"] = data.get("capabilities", [])
             except Exception as exc:
@@ -106,6 +107,9 @@ def main():
     submit.add_argument("--file", type=Path, required=True)
     submit.add_argument("--budget", type=float, default=5)
     submit.add_argument("--seconds", type=int, default=86400)
+    submit.add_argument(
+        "--request-key", help="Reuse this key to retry the same submission without duplication"
+    )
     show = sub.add_parser("status")
     show.add_argument("id")
     cancel = sub.add_parser("cancel")
@@ -176,14 +180,30 @@ def main():
             timeout=30, trust_env=False, headers={"Authorization": "Bearer " + s.api_token.get_secret_value()}
         ) as client:
             if args.command == "submit":
-                response = client.post(
-                    url,
-                    json={
-                        "prompt": args.file.read_text(encoding="utf-8-sig"),
-                        "budget_usd": args.budget,
-                        "max_seconds": args.seconds,
-                    },
-                )
+                request_key = args.request_key or secrets.token_urlsafe(24)
+                try:
+                    response = client.post(
+                        url,
+                        headers={"Idempotency-Key": request_key},
+                        json={
+                            "prompt": args.file.read_text(encoding="utf-8-sig"),
+                            "budget_usd": args.budget,
+                            "max_seconds": args.seconds,
+                        },
+                    )
+                    response.raise_for_status()
+                except httpx.HTTPError as exc:
+                    print(
+                        json.dumps(
+                            {
+                                "error": type(exc).__name__,
+                                "request_key": request_key,
+                                "retry": "Retry with --request-key and the same brief/limits",
+                            }
+                        ),
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(1) from None
             elif args.command == "cancel":
                 response = client.post(url + "/" + args.id + "/cancel")
             else:

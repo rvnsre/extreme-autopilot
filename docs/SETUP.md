@@ -1,5 +1,13 @@
 # Windows coordinator + dedicated VM
 
+## Upgrading from v0.1.0
+
+Stop the coordinator and worker before upgrading. Back up each complete private data directory while stopped, including databases, journals and any WAL files. Keep backups private. Install v0.2.0 on **both** machines, rebuild the panel, then start the coordinator and worker using the existing configuration. Database additions are automatic, transactional and serialized. An active legacy coordinator prevents migration.
+
+Worker protocol 2 adds a per-process `X-Worker-Session` header and a 45-second single-owner lease, managed automatically by the supplied worker. Mixed v0.1/v0.2 services are unsupported. A new worker may need to wait for the previous lease to expire. Existing incomplete mutations are not replayed; unknown outcomes produce a partial report and prohibit further changes in that task. Do not delete a worker journal to try to resume an ambiguous operation.
+
+Rolling back requires stopping both services and restoring the matching pre-upgrade data backups; old code is not compatible with the added worker columns/protocol. No downgrade or data deletion is performed automatically.
+
 ## Topology and prerequisites
 
 The coordinator and Ollama run on the host. A standard, non-administrator Windows user runs the worker inside a separate Windows 11 VM. Choose a hypervisor supported by your Windows edition. Install and license Windows yourself; this project does not install a hypervisor, modify security settings, accept license terms or automate account creation.

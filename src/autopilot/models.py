@@ -1,10 +1,12 @@
 import asyncio
 import json
+import time
 
 import httpx
 from pydantic import BaseModel
 
 from autopilot.config import Settings
+from autopilot.schema import TERMINAL
 from autopilot.store import Store
 
 
@@ -37,8 +39,6 @@ class Models:
         if not cloud:
             if not self.s.local_model:
                 raise ModelUnavailable("EA_LOCAL_MODEL is not configured")
-            if "cloud" in self.s.local_model.lower():
-                raise ModelUnavailable("Cloud aliases are not accepted by the local adapter")
             if not self.local_context:
                 try:
                     metadata = await self._request(
@@ -63,6 +63,9 @@ class Models:
                 raise ModelUnavailable(
                     "Context exceeds conservative local capacity; escalate instead of truncating"
                 )
+            current = self.store.job(job_id)
+            if current["status"] in TERMINAL or time.time() >= current["deadline"]:
+                raise ModelUnavailable("Task stopped before local generation")
             body = {
                 "model": self.s.local_model,
                 "stream": False,
@@ -129,9 +132,7 @@ class Models:
                 {"Authorization": "Bearer " + self.s.openai_key.get_secret_value()},
             )
             usage = data.get("usage", {})
-            if isinstance(usage.get("prompt_tokens"), int) and isinstance(
-                usage.get("completion_tokens"), int
-            ):
+            if type(usage.get("prompt_tokens")) is int and type(usage.get("completion_tokens")) is int:
                 if usage["prompt_tokens"] < 0 or usage["completion_tokens"] < 0:
                     raise ModelUnavailable("Invalid model usage")
                 actual = (

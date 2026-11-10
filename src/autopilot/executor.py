@@ -6,7 +6,6 @@ import io
 import json
 import os
 import shutil
-import signal
 import subprocess
 import threading
 import time
@@ -19,6 +18,7 @@ from pydantic import create_model
 
 from autopilot.config import Settings
 from autopilot.policy import scoped_path, validate_authority, web_url
+from autopilot.processes import kill_tree, managed_process
 from autopilot.schema import Action, StrictModel, ToolResult
 
 # Bounded, separately validated arguments; extra keys are never passed to libraries.
@@ -90,6 +90,7 @@ class Executor:
             self._context = self._playwright = self._page = None
 
     def execute(self, prompt: str, action: Action):
+        self._effect_started = False
         try:
             if self.cancel.is_set():
                 return ToolResult(ok=False, error="Execution cancelled before input")
@@ -98,10 +99,24 @@ class Executor:
                 raise ValueError("Tool arguments exceed 100 KB")
             validate_authority(prompt, action, self._page.url if self._page else "")
             data = self._dispatch(action.tool, args)
+            if action.tool == "process" and data.get("interrupted"):
+                return ToolResult(
+                    ok=False,
+                    data=data,
+                    unknown=True,
+                    error="Process interrupted; partial effects are unknown",
+                )
             return ToolResult(ok=True, data=data)
         except Exception as exc:
             # Library errors can contain submitted text. Bounded output stays in private job storage.
-            return ToolResult(ok=False, error=f"{type(exc).__name__}: {str(exc)[:1500]}")
+            return ToolResult(
+                ok=False, unknown=self._effect_started, error=f"{type(exc).__name__}: {str(exc)[:1500]}"
+            )
+
+    def _effect(self):
+        if self.cancel.is_set():
+            raise ValueError("Execution cancelled before input")
+        self._effect_started = True
 
     def _browser(self):
         if self._page is None:
@@ -158,15 +173,21 @@ class Executor:
         self.browser_frame = uuid.uuid4().hex
         text = page.locator("body").inner_text(timeout=10000)[:6000] if page.url != "about:blank" else ""
         controls = page.locator("body").aria_snapshot(timeout=10000)[:8000] if text else ""
+        focus = page.evaluate("""() => { const e = document.activeElement;
+            return e ? {tag:e.tagName,id:e.id,
+            name:e.getAttribute('name'),type:e.getAttribute('type')} : null; }""")
         data = {
             "url": page.url,
             "title": page.title(),
             "text": text,
             "controls": controls,
             "frame": self.browser_frame,
+            "focus": focus,
             "viewport": {"width": 1280, "height": 800},
         }
-        self.browser_digest = hashlib.sha256((page.url + text + controls).encode()).hexdigest()
+        self.browser_digest = hashlib.sha256(
+            (page.url + text + controls + json.dumps(focus)).encode()
+        ).hexdigest()
         if visual:
             from PIL import Image
 
@@ -182,7 +203,10 @@ class Executor:
         page = self._page
         text = page.locator("body").inner_text()[:6000] if page.url != "about:blank" else ""
         controls = page.locator("body").aria_snapshot()[:8000] if text else ""
-        digest = hashlib.sha256((page.url + text + controls).encode()).hexdigest()
+        focus = page.evaluate("""() => { const e = document.activeElement;
+            return e ? {tag:e.tagName,id:e.id,
+            name:e.getAttribute('name'),type:e.getAttribute('type')} : null; }""")
+        digest = hashlib.sha256((page.url + text + controls + json.dumps(focus)).encode()).hexdigest()
         self.browser_frame = ""
         if digest != self.browser_digest:
             raise ValueError("Browser changed since observation; reobserve")
@@ -272,6 +296,7 @@ class Executor:
             if tool == "browser_press":
                 if len(a["key"]) > 80:
                     raise ValueError("Key chord too long")
+                self._effect()
                 page.keyboard.press(a["key"])
             elif tool == "browser_click" and not a["selector"]:
                 if a["frame"] != getattr(self, "browser_visual_frame", None):
@@ -283,6 +308,7 @@ class Executor:
                     raise ValueError("Browser pixels changed; reobserve before coordinate input")
                 if not (0 <= a["x"] < 1280 and 0 <= a["y"] < 800):
                     raise ValueError("Coordinates must be in the reported viewport, not scaled JPEG pixels")
+                self._effect()
                 page.mouse.click(a["x"], a["y"])
             else:
                 locator = page.locator(a["selector"])
@@ -291,10 +317,19 @@ class Executor:
                 if tool == "browser_focus":
                     locator.focus()
                 elif tool == "browser_fill":
+                    if not locator.is_editable():
+                        raise ValueError("Target is not editable")
+                    self._effect()
                     locator.fill(a["text"])
                 elif tool == "browser_select":
+                    if not locator.is_enabled():
+                        raise ValueError("Target is disabled")
+                    self._effect()
                     locator.select_option(a["value"])
                 else:
+                    if not locator.is_visible() or not locator.is_enabled():
+                        raise ValueError("Target is not visible and enabled")
+                    self._effect()
                     locator.click()
             return self._browser_state()
         if tool == "desktop_observe":
@@ -303,6 +338,7 @@ class Executor:
             executable = self.settings.desktop_apps.get(a["app"])
             if not executable or not shutil.which(executable):
                 raise ValueError("Application is not configured in EA_DESKTOP_APPS")
+            self._effect()
             process = subprocess.Popen(
                 [executable],
                 cwd=self.root,
@@ -327,6 +363,7 @@ class Executor:
             if tool == "desktop_type":
                 # VK_PACKET supports Unicode without using or replacing the user's clipboard.
                 escaped = "".join("{" + c + "}" if c in "+^%~(){}" else c for c in a["text"])
+                self._effect()
                 window.type_keys(
                     escaped, with_spaces=True, with_tabs=True, with_newlines=True, pause=0.005, vk_packet=True
                 )
@@ -338,6 +375,7 @@ class Executor:
                     keys = a["keys"]
                     if not 1 <= len(keys) <= 4 or any(k not in pyautogui.KEYBOARD_KEYS for k in keys):
                         raise ValueError("Use 1-4 valid PyAutoGUI key names")
+                    self._effect()
                     pyautogui.hotkey(*keys)
                 else:
                     if a["frame"] != getattr(self, "desktop_visual_frame", None):
@@ -350,6 +388,7 @@ class Executor:
                     left, top, width, height = self.desktop_rect
                     if not (0 <= a["x"] < width and 0 <= a["y"] < height):
                         raise ValueError("Coordinates must be inside the observed window in original pixels")
+                    self._effect()
                     pyautogui.click(left + a["x"], top + a["y"])
             return self._desktop(window.handle, True)
         if tool.startswith("file_"):
@@ -375,6 +414,7 @@ class Executor:
                         output.write(raw)
                         output.flush()
                         os.fsync(output.fileno())
+                    self._effect()
                     os.replace(temporary, path)
                 finally:
                     temporary.unlink(missing_ok=True)
@@ -400,6 +440,8 @@ class Executor:
                 headers["Authorization"] = "Bearer " + profile.token.get_secret_value()
             with httpx.Client(timeout=30, follow_redirects=False, trust_env=False) as client:
                 kwargs = {"json": a.get("json_body", {})} if method != "GET" else {}
+                if method != "GET":
+                    self._effect()
                 with client.stream(method, a["url"], headers=headers, **kwargs) as response:
                     response.raise_for_status()
                     if response.status_code >= 300:
@@ -439,78 +481,54 @@ class Executor:
             in {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "COMSPEC", "LANG", "SYSTEMDRIVE"}
         }
         env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "HOME": str(self.root)})
-        job = None
-        if os.name == "nt":
-            import win32job
+        captured, overflow, reader_stop = bytearray(), threading.Event(), threading.Event()
+        total_read = 0
+        with managed_process([executable, *argv[1:]], cwd, env, self._effect) as process:
 
-            job = win32job.CreateJobObject(None, "")
-            limits = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
-            limits["BasicLimitInformation"]["LimitFlags"] = win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, limits)
-        try:
-            process = subprocess.Popen(
-                [executable, *argv[1:]],
-                cwd=cwd,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-                start_new_session=os.name != "nt",
-            )
-        except BaseException:
-            if job:
-                job.Close()
-            raise
-        if job:
+            def drain():
+                nonlocal total_read
+                if os.name != "nt":
+                    os.set_blocking(process.stdout.fileno(), False)
+                while not reader_stop.is_set():
+                    try:
+                        chunk = os.read(process.stdout.fileno(), 4096)
+                    except BlockingIOError:
+                        time.sleep(0.01)
+                        continue
+                    if not chunk:
+                        break
+                    total_read += len(chunk)
+                    if len(captured) < 64000:
+                        captured.extend(chunk[: 64000 - len(captured)])
+                    if total_read > 1048576:
+                        overflow.set()
+
+            thread = threading.Thread(target=drain, daemon=True)
+            thread.start()
+            deadline = time.monotonic() + a["timeout"]
+            interrupted = False
             try:
-                win32job.AssignProcessToJobObject(job, int(process._handle))
-            except Exception:
-                process.kill()
-                process.wait(timeout=10)
-                if job:
-                    win32job.TerminateJobObject(job, 1)
-                    job.Close()
-                raise RuntimeError("Cannot establish Windows child-process job containment") from None
-        captured, overflow = bytearray(), threading.Event()
-
-        def drain():
-            total = 0
-            while chunk := process.stdout.read(4096):
-                total += len(chunk)
-                if len(captured) < 64000:
-                    captured.extend(chunk[: 64000 - len(captured)])
-                if total > 1048576:
-                    overflow.set()
-
-        thread = threading.Thread(target=drain, daemon=True)
-        thread.start()
-        deadline = time.monotonic() + a["timeout"]
-        interrupted = False
-        while process.poll() is None:
-            if self.cancel.is_set() or overflow.is_set() or time.monotonic() >= deadline:
-                interrupted = True
-                if job:
-                    win32job.TerminateJobObject(job, 1)
-                    job.Close()
-                    job = None
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                break
-            time.sleep(0.1)
-        process.wait(timeout=15)
-        if job:
-            job.Close()
-        elif os.name != "nt":
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        thread.join(timeout=5)
-        return {
-            "argv": argv,
-            "exit_code": process.returncode,
-            "interrupted": interrupted,
-            "output": captured.decode("utf-8", errors="replace"),
-            "truncated": overflow.is_set(),
-        }
+                while process.poll() is None:
+                    if self.cancel.is_set() or overflow.is_set() or time.monotonic() >= deadline:
+                        interrupted = True
+                        kill_tree(process)
+                        break
+                    time.sleep(0.1)
+                process.wait(timeout=15)
+                kill_tree(process)
+            finally:
+                kill_tree(process)
+                thread.join(timeout=5)
+                if thread.is_alive() and os.name != "nt":
+                    interrupted = True
+                    reader_stop.set()
+                    thread.join(timeout=1)
+            if thread.is_alive():
+                raise RuntimeError("Process output did not close after tree termination")
+            return {
+                "argv": argv,
+                "exit_code": process.returncode,
+                "interrupted": interrupted,
+                "output": captured.decode("utf-8", errors="replace"),
+                "truncated": total_read > 64000 or interrupted,
+            }

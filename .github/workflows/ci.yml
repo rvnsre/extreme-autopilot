@@ -31,6 +31,8 @@ jobs:
         working-directory: web
       - run: npm test
         working-directory: web
+      - run: npm audit --audit-level=high
+        working-directory: web
       - run: npm run build
         working-directory: web
       - run: python -m build --no-isolation

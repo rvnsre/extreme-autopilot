@@ -1,13 +1,11 @@
 import asyncio
 import base64
-import contextlib
 import hmac
 import json
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import FileLock
@@ -28,12 +26,36 @@ class BoundaryMiddleware:
             return await self.app(scope, receive, send)
         path = scope["path"]
         protected = path.startswith(("/api/", "/worker/"))
+        original_send = send
+
+        async def secured_send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append(
+                    (
+                        b"content-security-policy",
+                        b"default-src 'self'; script-src 'self'; style-src 'self'; "
+                        b"img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; "
+                        b"base-uri 'none'; object-src 'none'",
+                    )
+                )
+                if protected:
+                    headers = [(k, v) for k, v in headers if k.lower() != b"cache-control"]
+                    headers.append((b"cache-control", b"no-store"))
+                message = {**message, "headers": headers}
+            await original_send(message)
+
+        send = secured_send
         if not protected:
             if self.worker_only:
                 return await JSONResponse({"detail": "Not found"}, 404)(scope, receive, send)
             return await self.app(scope, receive, send)
         if path.startswith("/worker/") != self.worker_only:
             return await JSONResponse({"detail": "Not found"}, 404)(scope, receive, send)
+        for name in (b"authorization", b"origin", b"idempotency-key", b"x-worker-session"):
+            if sum(k.lower() == name for k, _ in scope["headers"]) > 1:
+                return await JSONResponse({"detail": "Ambiguous duplicate header"}, 400)(scope, receive, send)
         headers = {k.lower(): v for k, v in scope["headers"]}
         origin = headers.get(b"origin", b"").decode("latin1")
         if origin and (self.worker_only or origin not in self.s.ui_origins):
@@ -77,30 +99,31 @@ def create_app(settings=None, *, worker_only=False, run_engine=True, models=None
     @asynccontextmanager
     async def lifespan(app):
         task, lock = None, None
-        if not worker_only and run_engine:
-            lock = FileLock(s.data_dir / "coordinator.lock", timeout=0)
-            lock.acquire()
-            store.recover()
-            task = asyncio.create_task(engine.run(s.tick_seconds))
         try:
+            if not worker_only and run_engine:
+                lock = FileLock(s.data_dir / "coordinator.lock", timeout=0)
+                lock.acquire()
+                store.recover()
+                task = asyncio.create_task(engine.run(s.tick_seconds))
+                app.state.scheduler = task
             yield
         finally:
             if task:
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+                await asyncio.gather(task, return_exceptions=True)
             if lock:
                 lock.release()
 
     app = FastAPI(
         title="Extreme Autopilot",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
     app.state.store, app.state.engine = store, engine
+    app.state.scheduler = None
     app.add_middleware(BoundaryMiddleware, settings=s, worker_only=worker_only)
 
     @app.exception_handler(KeyError)
@@ -114,37 +137,47 @@ def create_app(settings=None, *, worker_only=False, run_engine=True, models=None
     if worker_only:
 
         @app.post("/worker/poll")
-        async def poll():
-            return {"command": store.poll()}
+        async def poll(session: str = Header(..., alias="X-Worker-Session", pattern=r"^[0-9a-f]{32}$")):
+            return {"protocol": 2, "command": store.poll(session)}
 
         @app.get("/worker/heartbeat")
-        async def heartbeat(job_id: str = ""):
-            with store.tx() as db:
-                db.execute(
-                    "INSERT INTO worker VALUES(1,?) ON CONFLICT(id) DO UPDATE SET seen=excluded.seen",
-                    (time.time(),),
-                )
-            job = store.job(job_id) if job_id else None
-            return {"status": job["status"] if job else "idle", "deadline": job["deadline"] if job else None}
+        async def heartbeat(
+            job_id: str = "", session: str = Header(..., alias="X-Worker-Session", pattern=r"^[0-9a-f]{32}$")
+        ):
+            return store.heartbeat(session, job_id)
 
         @app.post("/worker/result")
-        async def result(payload: WorkerResult):
-            store.acknowledge(payload.action_id, payload.result.model_dump())
+        async def result(
+            payload: WorkerResult,
+            session: str = Header(..., alias="X-Worker-Session", pattern=r"^[0-9a-f]{32}$"),
+        ):
+            store.acknowledge(payload.action_id, payload.result.model_dump(), session)
             return {"accepted": True}
 
         return app
 
     @app.get("/api/health")
     async def health():
-        return {"service": "extreme-autopilot", "worker_online": store.worker_online()}
+        task = app.state.scheduler
+        healthy = task is None or not task.done()
+        return JSONResponse(
+            {
+                "service": "extreme-autopilot",
+                "worker_online": store.worker_online(),
+                "scheduler_running": None if task is None else healthy,
+            },
+            200 if healthy else 503,
+        )
 
     @app.get("/api/openapi.json")
     async def openapi():
         return app.openapi()
 
     @app.post("/api/jobs", status_code=201)
-    async def create(payload: JobInput):
-        return store.create(payload)
+    async def create(
+        payload: JobInput, request_key: str | None = Header(default=None, alias="Idempotency-Key")
+    ):
+        return store.create(payload, request_key)
 
     @app.get("/api/jobs")
     async def jobs():

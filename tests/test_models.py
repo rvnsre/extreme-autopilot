@@ -54,3 +54,28 @@ def test_incomplete_and_invalid_local_outputs_rejected(settings, store, brief, r
     model.response = response
     with pytest.raises(ModelUnavailable):
         asyncio.run(model.generate(job["id"], "Return JSON", {}, Plan))
+
+
+def test_local_model_names_are_not_mistaken_for_remote_aliases(settings, store, brief):
+    settings.local_model = "cloudless-local-model"
+    job = store.create(brief)
+    model = TransportModels(settings, store)
+    model.response = {
+        "done": True,
+        "done_reason": "stop",
+        "message": {"content": sample_plan().model_dump_json()},
+    }
+    assert asyncio.run(model.generate(job["id"], "Return JSON", {}, Plan)).goals
+
+
+def test_cancel_during_local_metadata_probe_prevents_generation(settings, store, brief):
+    job = store.create(brief)
+
+    class Cancelling(Models):
+        async def _request(self, url, body, headers=None):
+            assert url.endswith("/api/show")
+            store.finish(job["id"], "cancelled", {"summary": "Cancelled during metadata"})
+            return {"model_info": {"fixture.context_length": 32768}}
+
+    with pytest.raises(ModelUnavailable, match="stopped"):
+        asyncio.run(Cancelling(settings, store).generate(job["id"], "JSON", {}, Plan))

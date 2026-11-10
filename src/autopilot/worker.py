@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import ssl
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
@@ -73,72 +74,101 @@ async def run_worker(settings):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     lock = FileLock(settings.data_dir / "worker.lock", timeout=0)
     lock.acquire()
-    journal = Journal(settings.data_dir / "worker.sqlite")
-    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="desktop-owner")
-    executor, current_job = None, None
-    verify = ssl.create_default_context(cafile=settings.ca_file) if settings.ca_file else True
+    pool = executor = None
+    current_job = None
     try:
+        journal = Journal(settings.data_dir / "worker.sqlite")
+        verify = ssl.create_default_context(cafile=settings.ca_file) if settings.ca_file else True
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="desktop-owner")
         async with httpx.AsyncClient(
             base_url=settings.server_url,
             verify=verify,
             timeout=20,
             trust_env=False,
             follow_redirects=False,
-            headers={"Authorization": "Bearer " + settings.worker_token.get_secret_value()},
+            headers={
+                "Authorization": "Bearer " + settings.worker_token.get_secret_value(),
+                "X-Worker-Session": uuid.uuid4().hex,
+            },
         ) as client:
             while True:
                 try:
                     response = await client.post("/worker/poll")
                     response.raise_for_status()
-                    command = response.json()["command"]
+                    payload = response.json()
+                    if payload.get("protocol") != 2:
+                        raise ValueError(
+                            "Unsupported coordinator protocol; upgrade coordinator and worker together"
+                        )
+                    command = payload["command"]
                     if not command:
                         await asyncio.sleep(2)
                         continue
                     cached = journal.prepare(command["id"], command.get("redelivery", False))
                     if cached is None:
-                        if current_job != command["job_id"]:
-                            if executor:
-                                await asyncio.get_running_loop().run_in_executor(pool, executor.close)
-                            executor = Executor(
-                                settings, settings.data_dir / "workspaces" / command["job_id"]
+                        try:
+                            action = Action.model_validate(command["action"])
+                            heartbeat = await client.get(
+                                "/worker/heartbeat", params={"job_id": command["job_id"]}
                             )
-                            current_job = command["job_id"]
-                        executor.cancel.clear()
-                        action = Action.model_validate(command["action"])
-                        future = asyncio.get_running_loop().run_in_executor(
-                            pool, executor.execute, command["prompt"], action
-                        )
-                        while not future.done():
-                            done, _ = await asyncio.wait({future}, timeout=3)
-                            if done:
-                                break
-                            try:
-                                heartbeat = await client.get(
-                                    "/worker/heartbeat", params={"job_id": current_job}
+                            heartbeat.raise_for_status()
+                            lease = heartbeat.json()
+                            if (
+                                lease["status"] not in {"running", "recovering"}
+                                or time.time() >= lease["deadline"]
+                            ):
+                                raise ValueError("Task stopped before execution")
+                            if current_job != command["job_id"]:
+                                if executor:
+                                    await asyncio.get_running_loop().run_in_executor(pool, executor.close)
+                                executor = Executor(
+                                    settings, settings.data_dir / "workspaces" / command["job_id"]
                                 )
-                                heartbeat.raise_for_status()
-                                lease = heartbeat.json()
-                                if (
-                                    lease["status"] not in {"running", "recovering"}
-                                    or time.time() >= lease["deadline"]
-                                ):
+                                current_job = command["job_id"]
+                            executor.cancel.clear()
+                        except (httpx.HTTPError, ValueError, KeyError, OSError) as exc:
+                            cached = ToolResult(
+                                ok=False, error="Command rejected before input: " + type(exc).__name__
+                            ).model_dump()
+                        if cached is None:
+                            future = asyncio.get_running_loop().run_in_executor(
+                                pool, executor.execute, command["prompt"], action
+                            )
+                            while not future.done():
+                                done, _ = await asyncio.wait({future}, timeout=3)
+                                if done:
+                                    break
+                                try:
+                                    heartbeat = await client.get(
+                                        "/worker/heartbeat", params={"job_id": current_job}
+                                    )
+                                    heartbeat.raise_for_status()
+                                    lease = heartbeat.json()
+                                    if (
+                                        lease["status"] not in {"running", "recovering"}
+                                        or time.time() >= lease["deadline"]
+                                    ):
+                                        executor.cancel.set()
+                                except (httpx.HTTPError, ValueError, KeyError):
                                     executor.cancel.set()
-                            except httpx.HTTPError:
-                                # Stop further input if the coordinator cannot renew permission to execute.
-                                executor.cancel.set()
-                        cached = (await future).model_dump()
+                            cached = (await future).model_dump()
                         journal.finish(command["id"], cached)
-                    # Retries only resend an already journaled RESULT, never the operation.
                     response = await client.post(
                         "/worker/result", json={"action_id": command["id"], "result": cached}
                     )
                     response.raise_for_status()
                 except (httpx.HTTPError, ValueError, KeyError) as exc:
-                    log.warning("Worker connection/command error: %s", type(exc).__name__)
+                    reason = str(exc)[:300] if isinstance(exc, ValueError) else type(exc).__name__
+                    log.warning("Worker connection/command error: %s", reason)
                     await asyncio.sleep(3)
     finally:
-        if executor:
-            executor.cancel.set()
-            await asyncio.get_running_loop().run_in_executor(pool, executor.close)
-        pool.shutdown(wait=True, cancel_futures=True)
-        lock.release()
+        try:
+            if executor:
+                executor.cancel.set()
+                await asyncio.get_running_loop().run_in_executor(pool, executor.close)
+        finally:
+            try:
+                if pool:
+                    pool.shutdown(wait=True, cancel_futures=True)
+            finally:
+                lock.release()

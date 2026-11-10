@@ -11,6 +11,13 @@ from autopilot.schema import Action
 
 READ_TOOLS = {"observe", "browser_observe", "desktop_observe", "file_read", "file_list", "http_get"}
 LOCAL_TOOLS = {"file_write", "process", "desktop_type", "desktop_key", "desktop_click", "desktop_launch"}
+INPUT_TOOLS = {"browser_fill", "browser_press", "browser_click", "browser_select"}
+
+
+def read_only(action: Action):
+    return action.tool in READ_TOOLS or (
+        action.tool == "api_request" and action.args.get("method", "GET") == "GET"
+    )
 
 
 def fingerprint(action):
@@ -50,6 +57,14 @@ def web_url(url: str, allow_private=False):
 
 
 def validate_authority(prompt: str, action: Action, current_url=""):
+    if action.tool in LOCAL_TOOLS | INPUT_TOOLS and action.intent not in {"local_change", "external_write"}:
+        raise ValueError(
+            "Input and mutation tools require explicit change intent and original-brief authority"
+        )
+    if action.tool in {"browser_open", "browser_focus", "desktop_focus"} and action.intent != "navigate":
+        raise ValueError("Navigation tools require navigate intent")
+    if action.tool == "api_request" and action.args.get("method", "GET") == "GET" and action.intent != "read":
+        raise ValueError("GET API requests must use read intent")
     if (
         action.tool == "api_request"
         and action.args.get("method", "GET") != "GET"

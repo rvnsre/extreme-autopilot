@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { briefLength, labels, money, terminal } from "./state";
 import "./style.css";
+import { serialPoll } from "./polling";
 
 type Artifact = { action_id: string; path: string; sha256: string };
 type Report = {
@@ -10,6 +11,8 @@ type Report = {
   remaining?: string[];
   verification?: { reason: string };
   uncertain_actions: string[];
+  pending_actions?: string[];
+  reserved_usd?: number;
 };
 type Job = {
   id: string;
@@ -46,6 +49,12 @@ function App() {
     [screen, setScreen] = useState("");
   const screenRef = useRef("");
   const cursorRef = useRef(0);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const revisionRef = useRef(0);
+  const authRef = useRef(0);
+  const submissionRef = useRef<{ brief: string; key: string } | null>(null);
+  const [connecting, setConnecting] = useState(false);
   const api = useCallback(
     async (path: string, init: RequestInit = {}) => {
       const response = await fetch("/api" + path, {
@@ -74,24 +83,20 @@ function App() {
 
   useEffect(() => {
     if (!connected) return;
-    let active = true;
-    const refresh = async () => {
-      try {
-        const [a, b] = await Promise.all([api("/jobs"), api("/health")]);
-        if (active) {
-          setJobs(await a.json());
-          setWorker((await b.json()).worker_online);
-        }
-      } catch (e) {
-        if (active) setError(String(e));
-      }
-    };
-    void refresh();
-    const id = setInterval(() => void refresh(), 2500);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
+    return serialPoll(
+      async (signal) => {
+        const [a, b] = await Promise.all([
+          api("/jobs", { signal }),
+          api("/health", { signal }),
+        ]);
+        const [listed, health] = await Promise.all([a.json(), b.json()]);
+        if (signal.aborted) return;
+        setJobs(listed);
+        setWorker(health.worker_online);
+      },
+      2500,
+      (e) => setError(String(e)),
+    );
   }, [connected, api]);
 
   useEffect(() => {
@@ -104,93 +109,104 @@ function App() {
       screenRef.current = "";
     }
     if (!selected || !connected) return;
-    let active = true;
-    const refresh = async () => {
-      try {
+    return serialPoll(
+      async (signal) => {
+        const revision = revisionRef.current;
         const [a, b] = await Promise.all([
-          api("/jobs/" + selected),
+          api("/jobs/" + selected, { signal }),
           api(
             "/jobs/" +
               selected +
               "/events?summary=true&after=" +
               cursorRef.current,
+            { signal },
           ),
         ]);
         const detail: Job = await a.json();
         const log: Event[] = await b.json();
-        if (active) {
-          setJob(detail);
-          if (log.length) {
-            cursorRef.current = Math.max(
-              cursorRef.current,
-              log[log.length - 1].seq,
-            );
-            setEvents((old) =>
-              Array.from(
-                new Map([...old, ...log].map((e) => [e.seq, e])).values(),
-              ).slice(-100),
-            );
-          }
+        if (signal.aborted || revision !== revisionRef.current) return;
+        setJob(detail);
+        if (log.length) {
+          cursorRef.current = Math.max(
+            cursorRef.current,
+            log[log.length - 1].seq,
+          );
+          setEvents((old) =>
+            Array.from(
+              new Map([...old, ...log].map((e) => [e.seq, e])).values(),
+            ).slice(-100),
+          );
         }
         const image = await fetch("/api/jobs/" + selected + "/screen", {
           headers: { Authorization: "Bearer " + token },
           cache: "no-store",
+          signal,
         });
-        if (image.ok && active) {
-          const next = URL.createObjectURL(await image.blob());
-          if (active) {
-            URL.revokeObjectURL(screenRef.current);
-            screenRef.current = next;
-            setScreen(next);
-          } else URL.revokeObjectURL(next);
-        }
-      } catch (e) {
-        if (active) setError(String(e));
-      }
-    };
-    void refresh();
-    const id = setInterval(() => void refresh(), 2500);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
+        if (!image.ok) return;
+        const blob = await image.blob();
+        if (signal.aborted || revision !== revisionRef.current) return;
+        const next = URL.createObjectURL(blob);
+        URL.revokeObjectURL(screenRef.current);
+        screenRef.current = next;
+        setScreen(next);
+      },
+      2500,
+      (e) => setError(String(e)),
+    );
   }, [selected, connected, api, token]);
 
   async function connect() {
+    setConnecting(true);
     setError("");
     try {
       await api("/health");
+      authRef.current += 1;
       setConnected(true);
     } catch (e) {
       setError(String(e));
+    } finally {
+      setConnecting(false);
     }
   }
   async function submit() {
     setBusy(true);
     setError("");
+    const auth = authRef.current;
+    if (
+      !submissionRef.current ||
+      submissionRef.current.brief !== prompt.trim()
+    ) {
+      submissionRef.current = {
+        brief: prompt.trim(),
+        key: crypto.randomUUID(),
+      };
+    }
     try {
       const response = await api("/jobs", {
+        headers: { "Idempotency-Key": submissionRef.current.key },
         method: "POST",
         body: JSON.stringify({ prompt, budget_usd: 5, max_seconds: 86400 }),
       });
       const created: Job = await response.json();
+      if (auth !== authRef.current) return;
+      submissionRef.current = null;
       setSelected(created.id);
       setJobs((old) => [created, ...old]);
       setPrompt("");
     } catch (e) {
-      setError(String(e));
+      if (auth === authRef.current) setError(String(e));
     } finally {
-      setBusy(false);
+      if (auth === authRef.current) setBusy(false);
     }
   }
   async function cancel() {
     if (!job) return;
+    revisionRef.current += 1;
     try {
-      setJob(
-        await (
-          await api("/jobs/" + job.id + "/cancel", { method: "POST" })
-        ).json(),
-      );
+      const updated: Job = await (
+        await api("/jobs/" + job.id + "/cancel", { method: "POST" })
+      ).json();
+      if (selectedRef.current === updated.id) setJob(updated);
     } catch (e) {
       setError(String(e));
     }
@@ -228,6 +244,7 @@ function App() {
         <label htmlFor="token">İdarəetmə açarı</label>
         <input
           id="token"
+          disabled={connecting}
           type="password"
           autoComplete="off"
           value={entry}
@@ -240,7 +257,9 @@ function App() {
             if (e.key === "Enter") void connect();
           }}
         />
-        <button onClick={() => void connect()}>Panelə daxil ol →</button>
+        <button disabled={connecting} onClick={() => void connect()}>
+          {connecting ? "Qoşulur…" : "Panelə daxil ol →"}
+        </button>
         <small>Açar yalnız bu səhifənin yaddaşında qalır.</small>
         {error && (
           <p role="alert" className="error">
@@ -289,7 +308,16 @@ function App() {
           <button
             className="text"
             onClick={() => {
+              authRef.current += 1;
+              revisionRef.current += 1;
               setConnected(false);
+              setSelected("");
+              setJobs([]);
+              setJob(null);
+              setPrompt("");
+              setBusy(false);
+              submissionRef.current = null;
+              setError("");
               setToken("");
               setEntry("");
             }}
@@ -448,6 +476,18 @@ function App() {
                     <small>{a.sha256.slice(0, 16)}</small>
                   </button>
                 ))}
+                {!!job.report.pending_actions?.length && (
+                  <p className="error">
+                    Hələ nəticəsi gəlməyən əməliyyatlar:{" "}
+                    {job.report.pending_actions.length}
+                  </p>
+                )}
+                {!!job.report.reserved_usd && (
+                  <p className="muted">
+                    Gözlənilən bulud hesablaşması:{" "}
+                    {money(job.report.reserved_usd)}
+                  </p>
+                )}
                 {job.report.uncertain_actions?.length > 0 && (
                   <p className="error">
                     Nəticəsi qeyri-müəyyən əməliyyatlar:{" "}

@@ -2,29 +2,61 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ApiCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     origin: str
     token: SecretStr
+
+    @field_validator("origin")
+    @classmethod
+    def origin_only(cls, value):
+        url = urlsplit(value)
+        if (
+            url.scheme != "https"
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or url.path not in {"", "/"}
+        ):
+            raise ValueError("Credential origin must be an HTTPS origin without path, query or credentials")
+        _ = url.port
+        return f"https://{url.netloc.lower()}"
+
+    @field_validator("token")
+    @classmethod
+    def bearer_format(cls, value):
+        raw = value.get_secret_value()
+        if not raw or not raw.isascii() or any(c.isspace() for c in raw):
+            raise ValueError("Credential token must be nonempty ASCII without whitespace")
+        return value
 
 
 def token_configured(token: SecretStr):
     value = token.get_secret_value()
-    return len(value) >= 32 and not value.startswith(("REPLACE_", "YOUR_"))
+    return (
+        len(value) >= 32
+        and value.isascii()
+        and not any(c.isspace() for c in value)
+        and not value.startswith(("REPLACE_", "YOUR_"))
+    )
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EA_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="EA_", env_file=".env", extra="ignore", allow_inf_nan=False, hide_input_in_errors=True
+    )
 
     data_dir: Path = (
         Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local/share"))) / "ExtremeAutopilot"
     )
     api_token: SecretStr = SecretStr("")
     worker_token: SecretStr = SecretStr("")
-    worker_id: str = "windows-01"
     server_url: str = "https://localhost:8766"
     ca_file: str | None = None
     ollama_url: str = "http://127.0.0.1:11434"
@@ -54,9 +86,17 @@ class Settings(BaseSettings):
         local = urlsplit(self.ollama_url)
         if local.scheme != "http" or local.hostname not in {"localhost", "127.0.0.1", "::1"}:
             raise ValueError("Ollama must be a loopback HTTP service on the coordinator")
+        if local.username or local.password or local.query or local.fragment or local.path not in {"", "/"}:
+            raise ValueError("Ollama URL must be an origin without credentials, path or query")
+        _ = local.port
         remote = urlsplit(self.server_url)
         if remote.scheme != "https" or not remote.hostname or remote.username or remote.password:
             raise ValueError("Worker server_url must use authenticated HTTPS, without URL credentials")
+        if remote.query or remote.fragment or remote.path not in {"", "/"}:
+            raise ValueError("Worker URL must be an origin without path or query")
+        _ = remote.port
+        self.ollama_url = self.ollama_url.rstrip("/")
+        self.server_url = self.server_url.rstrip("/")
         return self
 
     def require_tokens(self):

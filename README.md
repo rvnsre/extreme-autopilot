@@ -4,6 +4,8 @@ One brief, autonomous execution in a dedicated Windows VM. Azərbaycan dilində 
 
 **Status: implementation preview, not an accepted production release.** Live OpenAI/Ollama + dedicated Windows VM acceptance and the full 24-hour soak must pass before claiming the complete plan is verified. See [VALIDATION.md](VALIDATION.md).
 
+v0.2.0 includes a regression-backed correctness/recovery audit. See [AUDIT.md](AUDIT.md) for reproduced defects, fixes and limits. Existing installations must stop both services and upgrade the coordinator and worker together; see [upgrade instructions](docs/SETUP.md#upgrading-from-v010).
+
 ## What it does
 
 - Accepts one trimmed brief of 200–50,000 Unicode codepoints. No runtime questions or approval inbox.
@@ -14,6 +16,7 @@ One brief, autonomous execution in a dedicated Windows VM. Azərbaycan dilində 
 - Retains a compact per-goal evidence index across long runs, even after earlier actions leave recent model context.
 - Tracks cloud reservations/usage, stops new paid requests at the configured application budget and exposes reports/artifacts.
 - Provides the same job lifecycle through the panel, CLI and HTTP API. Default: 24 hours, $5, 2,000 tool operations.
+- Uses idempotent job submission and a single active worker-session lease. Uncertain input outcomes prohibit further mutations in that task and are reported as partial.
 
 ## Quick start
 
@@ -55,6 +58,9 @@ Coordinator: loopback HTTP port 8765 with `Authorization: Bearer EA_API_TOKEN`. 
 | GET | `/api/jobs/{id}/artifacts/{action_id}` | Captured output file |
 
 States: `queued → running ↔ recovering → completed / partial / blocked / failed / cancelled`.
+`POST /api/jobs` accepts an optional `Idempotency-Key` (16–128 ASCII letters/digits/hyphens/underscores). Reuse the exact key, brief and limits to retry a lost response without creating a second job; changed payloads return 409. The panel retains the key while retrying its current submission; a full page reset may discard it, so inspect existing jobs before manually resubmitting. CLI failures print the key for `submit --request-key KEY` retries.
+
+Worker protocol 2 requires `X-Worker-Session` on poll/heartbeat/result calls; the supplied worker handles it automatically. Another live session receives 409. Lease expiry is 45 seconds; an interrupted command remains subject to journal/redelivery checks. `/api/health` returns 503 if the scheduler has stopped. Reports expose pending operations and unsettled billing instead of implying that cancellation undoes completed effects.
 Cancellation is cooperative: running process trees are stopped on the next heartbeat (normally ≤3 seconds plus network latency); in-flight UI/library operations may run until their bounded timeout. Already submitted external side effects cannot be undone.
 
 ## Development

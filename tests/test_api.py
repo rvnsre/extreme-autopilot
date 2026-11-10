@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import time
 
 from fastapi.testclient import TestClient
@@ -43,14 +44,16 @@ def test_worker_protocol_and_artifact_download(settings, brief):
     job = store.create(brief)
     store.active()
     action = store.enqueue(job["id"], Action(tool="file_read", args={"path": "report.txt"}).model_dump())
-    with TestClient(gateway, headers={"Authorization": "Bearer " + "w" * 48}) as worker:
+    with TestClient(
+        gateway, headers={"Authorization": "Bearer " + "w" * 48, "X-Worker-Session": "1" * 32}
+    ) as worker:
         command = worker.post("/worker/poll").json()["command"]
         assert command["id"] == action
         assert worker.get("/api/health").status_code == 404
         data = {
             "artifact": {
                 "path": "report.txt",
-                "sha256": "abc",
+                "sha256": hashlib.sha256(b"done").hexdigest(),
                 "content_b64": base64.b64encode(b"done").decode(),
             }
         }

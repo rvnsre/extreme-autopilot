@@ -1,6 +1,9 @@
+import base64
+import hashlib
+import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TERMINAL = {"completed", "partial", "blocked", "failed", "cancelled"}
 TOOLS = Literal[
@@ -28,7 +31,7 @@ TOOLS = Literal[
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False, hide_input_in_errors=True)
 
 
 class JobInput(StrictModel):
@@ -111,6 +114,26 @@ class ToolResult(StrictModel):
     data: dict = Field(default_factory=dict)
     error: str = Field(default="", max_length=2000)
     unknown: bool = False
+
+    @model_validator(mode="after")
+    def validate_receipt(self):
+        try:
+            json.dumps(self.data, allow_nan=False)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Result data must be finite JSON") from exc
+        if self.ok and self.unknown:
+            raise ValueError("An unknown outcome cannot be successful")
+        artifact = self.data.get("artifact")
+        if artifact is not None:
+            if not isinstance(artifact, dict) or not isinstance(artifact.get("path"), str):
+                raise ValueError("Invalid artifact metadata")
+            try:
+                raw = base64.b64decode(artifact["content_b64"], validate=True)
+            except (KeyError, ValueError, TypeError) as exc:
+                raise ValueError("Invalid artifact encoding") from exc
+            if len(raw) > 512000 or artifact.get("sha256") != hashlib.sha256(raw).hexdigest():
+                raise ValueError("Artifact size or SHA-256 integrity check failed")
+        return self
 
 
 class WorkerResult(StrictModel):

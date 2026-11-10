@@ -83,6 +83,17 @@ def test_real_browser_elements_keyboard_freshness_and_screen(settings, tmp_path)
         assert "Verified note" in pressed.data["text"]
         visual = ex.execute(brief, Action(tool="browser_observe", args={"visual": True}))
         assert visual.ok and visual.data["screen"]["jpeg"]
+        ex._page.locator("#note").focus()
+        changed_focus = ex.execute(
+            brief,
+            Action(
+                tool="browser_press",
+                intent="local_change",
+                authority_quote=brief,
+                args={"key": "Enter", "frame": visual.data["frame"]},
+            ),
+        )
+        assert not changed_focus.ok and not changed_focus.unknown
     finally:
         ex.close()
         server.shutdown()

@@ -4,7 +4,7 @@ import time
 
 from autopilot.executor import tool_catalog
 from autopilot.models import Models, ModelUnavailable
-from autopilot.policy import fingerprint, validate_authority
+from autopilot.policy import fingerprint, read_only, validate_authority
 from autopilot.schema import Action, Decision, Finish, Plan, Verdict
 from autopilot.store import Store
 
@@ -37,7 +37,8 @@ def compact(actions, limit=8, text_limit=6000):
     """Bound text history, retain IDs/hashes/exit codes; never feed whole artifact bytes to a model."""
     summaries = []
     latest_screen = None
-    for action in actions[-limit:]:
+    selected = actions[-limit:]
+    for position, action in enumerate(selected):
         item = json.loads(json.dumps(action))
         item["body"].pop("authority_quote", None)
         for key, value in item["body"].get("args", {}).items():
@@ -46,7 +47,7 @@ def compact(actions, limit=8, text_limit=6000):
         data = (item.get("result") or {}).get("data", {})
         for container in (data, data.get("browser", {})):
             screen = container.pop("screen", None)
-            if screen:
+            if screen and position == len(selected) - 1:
                 latest_screen = screen.get("jpeg")
         artifact = data.get("artifact")
         if artifact:
@@ -123,12 +124,22 @@ class Engine:
             },
         )
 
-    async def ask(self, job, instruction, packet, schema, cloud_first=False):
-        routes = [True] if cloud_first else [False, True]
+    async def ask(self, job, instruction, packet, schema, cloud_first=False, cloud_required=False):
+        routes = [True] if cloud_required else ([True, False] if cloud_first else [False, True])
         failures = []
         for cloud in routes:
+            current = self.store.job(job["id"])
+            if (
+                current["status"] in {"completed", "partial", "blocked", "failed", "cancelled"}
+                or time.time() >= current["deadline"]
+            ):
+                raise ModelUnavailable("Task stopped or its deadline expired before the model request")
+            outgoing = packet
+            if not cloud and "latest_screen" in packet:
+                outgoing = {k: v for k, v in packet.items() if k != "latest_screen"}
+                outgoing["vision_unavailable"] = "Use only text evidence; do not infer unseen pixels."
             try:
-                return await self.models.generate(job["id"], SYSTEM + instruction, packet, schema, cloud)
+                return await self.models.generate(job["id"], SYSTEM + instruction, outgoing, schema, cloud)
             except ModelUnavailable as exc:
                 failures.append(str(exc))
         raise ModelUnavailable("; ".join(failures))
@@ -145,20 +156,19 @@ class Engine:
                 remaining=["Time limit reached; inspect evidence for unfinished goals"],
             )
             return
-        if job["step"] >= self.max_steps:
-            self.finish(job, "partial", "Maksimum əməliyyat sayı tamamlandı.")
-            return
-        if not self.store.worker_online():
+        if not self.store.worker_online() and not job["plan"]:
             return  # Waiting for a provisioned worker is bounded by the original task deadline.
         actions = self.store.actions(job["id"])
         if any(a["status"] != "done" for a in actions):
             return
         try:
             if job["status"] == "recovering":
-                if not actions or actions[-1]["body"]["tool"] != "observe":
+                if job["step"] >= self.max_steps:
+                    self.store.update(job["id"], status="running")
+                elif not actions or actions[-1]["body"]["tool"] != "observe":
                     self.store.enqueue(job["id"], Action(tool="observe").model_dump())
                     return
-                if actions[-1]["result"]["ok"]:
+                elif actions[-1]["result"]["ok"]:
                     self.store.update(job["id"], status="running")
                 else:
                     raise ValueError("Recovery observation failed; do not perform further input")
@@ -168,6 +178,7 @@ class Engine:
                 "plan": job["plan"],
                 "recent_actions": history,
                 "evidence_index": evidence_index(actions),
+                "worker_online": self.store.worker_online(),
                 "uncertain_execution": bool(job["uncertain"]),
                 "tools": tool_catalog(),
                 "remaining_seconds": max(0, job["deadline"] - time.time()),
@@ -205,6 +216,22 @@ class Engine:
                 await self.verify_finish(job, decision, actions, packet)
                 return
             action = decision.action
+            if job["step"] >= self.max_steps:
+                self.finish(
+                    job,
+                    "partial",
+                    "Maksimum əməliyyat sayı tamamlandı.",
+                    remaining=["No further actions allowed; final verification was still attempted"],
+                )
+                return
+            if job["uncertain"] and not read_only(action):
+                self.finish(
+                    job,
+                    "partial",
+                    "Əvvəlki əməliyyatın nəticəsi qeyri-müəyyəndir; yeni dəyişiklik icra edilmədi.",
+                    remaining=["Uncertain execution fenced all further mutations; inspect receipts"],
+                )
+                return
             if action.goal_id not in {g["id"] for g in job["plan"]["goals"]}:
                 raise ValueError("Action needs a goal_id from the current plan")
             current_url = ""
@@ -263,6 +290,14 @@ class Engine:
             )
             return
         goal_ids = {g["id"] for g in job["plan"]["goals"]}
+        if job["uncertain"]:
+            self.finish(
+                job,
+                "partial",
+                proposed.summary,
+                remaining=["Unresolved uncertain operations prevent a completed status"],
+            )
+            return
         if proposed.remaining or {e.goal_id for e in evidence} != goal_ids:
             raise ValueError("Every planned goal requires evidence and no remaining work")
         verified_actions, screen = compact(valid, limit=30, text_limit=2000)
@@ -282,6 +317,7 @@ class Engine:
             verify_packet,
             Verdict,
             cloud_first=True,
+            cloud_required=True,
         )
         if not verdict.verified or set(verdict.satisfied_goals) != goal_ids:
             raise ValueError("Independent verification failed: " + verdict.reason)

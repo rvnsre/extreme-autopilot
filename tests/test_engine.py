@@ -38,6 +38,8 @@ def test_real_engine_completion_needs_readback_and_independent_verifier(store, b
     store.active()
     store.poll()
     store.acknowledge(action, {"ok": True, "data": {"text": "Verified result"}})
+    with store.tx() as db:
+        db.execute("UPDATE worker SET seen=?", (time.time() - 60,))
     finish = Decision(
         decision=Finish(
             kind="finish",

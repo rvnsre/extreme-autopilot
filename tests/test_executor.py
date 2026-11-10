@@ -120,7 +120,7 @@ def test_process_timeout(settings, tmp_path):
             args={"argv": [sys.executable, "-c", "import time; time.sleep(30)"], "timeout": 1},
         ),
     )
-    assert result.ok, result.error
+    assert not result.ok and result.unknown
     assert result.data["interrupted"]
     assert result.data["exit_code"] != 0
 
@@ -143,3 +143,46 @@ def test_journal_releases_windows_file_handles(tmp_path):
     journal.finish("action", {"ok": True})
     path.unlink()
     assert not path.exists()
+
+
+def test_process_output_reports_the_actual_capture_limit(settings, tmp_path):
+    settings.process_commands = [sys.executable]
+    executor = Executor(settings, tmp_path / "workspace")
+    prompt = "Run and test the requested local Python program in this workspace."
+    result = executor.execute(
+        prompt,
+        Action(
+            tool="process",
+            intent="local_change",
+            authority_quote=prompt,
+            args={"argv": [sys.executable, "-c", "import sys; sys.stdout.write('A'*100000)"], "timeout": 10},
+        ),
+    )
+    assert result.ok, result.error
+    assert len(result.data["output"]) == 64000 and result.data["truncated"]
+
+
+def test_process_children_are_stopped_after_parent_exit(settings, tmp_path):
+    import time
+
+    settings.process_commands = [sys.executable]
+    executor = Executor(settings, tmp_path / "workspace")
+    prompt = "Run a bounded local Python program and verify its results."
+    child = "import time; from pathlib import Path; time.sleep(.6); Path('escaped.txt').write_text('ran')"
+    parent = (
+        "import subprocess,sys; subprocess.Popen([sys.executable,'-c',"
+        + repr(child)
+        + "]); print('parent done')"
+    )
+    result = executor.execute(
+        prompt,
+        Action(
+            tool="process",
+            intent="local_change",
+            authority_quote=prompt,
+            args={"argv": [sys.executable, "-c", parent], "timeout": 10},
+        ),
+    )
+    assert result.ok, result.error
+    time.sleep(0.8)
+    assert not (executor.root / "escaped.txt").exists()

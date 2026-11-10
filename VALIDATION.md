@@ -6,20 +6,21 @@ This is a source implementation preview. It must not be represented as a zero-er
 
 Windows / Python 3.11.9 verification on 2026-11-10:
 
-- **63 Python tests passed**, one opt-in real-browser test skipped; measured line coverage **71%**. Desktop tools and live model quality are not covered by that percentage. One upstream Starlette/httpx deprecation warning remains.
-- Ruff checks passed. Frontend TypeScript/Vite production build and **4 frontend tests** passed.
+- **104 Python tests passed**, one opt-in real-browser test skipped; measured line coverage **74%**. Desktop tools and live model quality are not covered by that percentage. One upstream Starlette/httpx deprecation warning remains.
+- Ruff checks passed. Frontend TypeScript/Vite production build, Prettier checks and **6 frontend tests** passed.
+- The initial audit reproduced **14 failing cases** on v0.1.0; their regression tests now pass. See [AUDIT.md](AUDIT.md) for defects, fixes and remaining limits.
 - Real filesystem/process integration passed through the queue and worker protocol; model decisions in this test are synthetic fixtures.
 - Reservation concurrency, lost billing response, cancellation, unknown command redelivery, independent verification rejection, long-task evidence retention and Windows journal handle release have regression coverage.
 - Version-pinned dependencies pass `pip check`. Built wheel contains the panel's HTML/CSS/JS assets.
 - Full npm dependency audit reports zero known vulnerabilities after updating the test runner to Vitest 5.1.0; both production and development dependencies were included.
 - Installing the built wheel into a separate target and importing the installed package/panel assets passed.
-- A **72-second synthetic soak** completed **422 cycles with zero failures**, including duplicate acknowledgements and journal/store reopen. It is not the 24-hour acceptance run.
+- A **122.4-second synthetic soak** completed **688 cycles with zero failures**, including duplicate acknowledgements and journal/store reopen. It is not the 24-hour acceptance run.
 - The local Edge browser test could not launch successfully inside the execution sandbox. Bundled Chromium installation also encountered a host `realpath` permission error. The opt-in real-browser test is supplied in a separate Windows CI job; its result must be checked independently.
 - Panel visual QA could not complete: Computer Use stopped because it could not reliably determine the current Windows browser URL. No visual-QA pass is claimed.
 
 ## GitHub Actions verification
 
-[Quality checks run 42721451958](https://github.com/rvnsre/extreme-autopilot/actions/runs/42721451958) completed successfully for source commit `f35a2e492e2cf01f9ec091db5b387ebad82b11e6`.
+The v0.2.0 CI result is pending publication. The following result is historical v0.1.0 evidence only: [quality checks run 42721451958](https://github.com/rvnsre/extreme-autopilot/actions/runs/42721451958), source commit `f35a2e492e2cf01f9ec091db5b387ebad82b11e6`.
 
 - All four Windows/Linux × Python 3.11/3.12 jobs passed backend tests, frontend tests, formatting checks and package builds.
 - The separate Windows real-Chromium job passed `test_real_browser_elements_keyboard_freshness_and_screen` (**1 passed**), exercising real page navigation, element filling/focus, keyboard activation, stale-frame rejection and JPEG observation.
@@ -44,5 +45,5 @@ No OpenAI key, configured local Ollama model or dedicated Windows VM was supplie
 - Unknown outcomes are conservatively fenced, not magically made exactly-once.
 - Screenshot freshness hashes cover bounded text/accessibility state; purely visual changes can still occur. Coordinate actions need recent visual observation and remain susceptible to UI races.
 - A dedicated unlocked interactive session is required. The worker cannot recover from a locked Windows login screen by itself.
-- Large artifact export (>512 KB per captured file) and parallel desktop workers are outside v0.1.
+- Large artifact export (>512 KB per captured file) and parallel desktop workers are outside v0.2.
 - Price configuration is operator-maintained. Budget accounting is not a hard provider billing cap.
