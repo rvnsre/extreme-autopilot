@@ -8,6 +8,7 @@ permissions:
 jobs:
   tests:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.11', '3.12']
@@ -38,6 +39,7 @@ jobs:
       - run: python -m build --no-isolation
   browser:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -52,6 +54,17 @@ jobs:
       - run: python -m playwright install chromium
       - if: runner.os == 'Linux'
         run: python -m playwright install-deps chromium
+      - if: runner.os == 'Linux'
+        name: Allow Chromium user namespaces on the disposable AppArmor runner
+        run: |
+          cat > /tmp/autopilot-playwright.apparmor <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile autopilot-playwright /home/runner/.cache/ms-playwright/**/chrome* flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /tmp/autopilot-playwright.apparmor
       - run: pytest tests/test_browser_live.py -v
         env:
           EA_TEST_BROWSER: '1'

@@ -512,12 +512,14 @@ class Executor:
                 process.wait(timeout=15)
                 kill_tree(process)
             finally:
-                kill_tree(process)
-                thread.join(timeout=5)
-                if thread.is_alive() and os.name != "nt":
-                    interrupted = True
-                    reader_stop.set()
-                    thread.join(timeout=1)
+                try:
+                    kill_tree(process)
+                finally:
+                    thread.join(timeout=5)
+                    if thread.is_alive() and os.name != "nt":
+                        interrupted = True
+                        reader_stop.set()
+                        thread.join(timeout=1)
             if thread.is_alive():
                 raise RuntimeError("Process output did not close after tree termination")
             return {

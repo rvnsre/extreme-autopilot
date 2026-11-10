@@ -39,6 +39,8 @@ The installer does not run `sudo`, change system permissions, install a display 
 
 Native Wayland desktop automation is unsupported, including sessions with XWayland enabled. Browser automation can still run with Playwright (headless mode does not need desktop input). A headless server can use browser/API/file/process tools; desktop input fails with an actionable diagnostic.
 
+Chromium sandboxing stays enabled. Some Ubuntu/AppArmor installations restrict unprivileged user namespaces; provision an appropriate executable-specific AppArmor profile during worker setup, or use an administrator-provisioned browser with a matching profile via `EA_BROWSER_CHANNEL`. The disposable Linux CI runner installs a profile for its Playwright browser path rather than disabling sandboxing or globally disabling AppArmor restrictions. The application never changes host policy.
+
 ## macOS first-time permissions
 
 In System Settings → Privacy & Security, grant the dedicated worker's terminal/Python launcher **Accessibility**, **Screen & System Audio Recording** (name varies by OS version), and **Automation → System Events**. Use the same launcher for setup and execution; restarting it may be necessary. During initial setup only, a local operator can run:

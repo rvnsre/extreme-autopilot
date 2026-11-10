@@ -102,6 +102,16 @@ def kill_tree(process):
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            # Darwin can report EPERM for an orphan group containing only zombies.
+            # Never suppress denial while any live member remains.
+            snapshot = subprocess.run(
+                ["/bin/ps", "-axo", "pgid=,stat="], capture_output=True, text=True, timeout=5, check=True
+            ).stdout
+            for line in snapshot.splitlines():
+                fields = line.split()
+                if len(fields) == 2 and fields[0] == str(process.pid) and not fields[1].startswith("Z"):
+                    raise
 
 
 @contextmanager

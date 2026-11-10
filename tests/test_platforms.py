@@ -129,6 +129,27 @@ def test_capability_probe_reports_missing_permissions(monkeypatch):
     assert desktop.capabilities(probe=True)["desktop_error"] == "Permission missing"
 
 
+@pytest.mark.parametrize("state,denied", [("Z+", False), ("S", True)])
+def test_posix_group_permission_errors_never_hide_live_children(monkeypatch, state, denied):
+    from types import SimpleNamespace
+
+    from autopilot import processes
+
+    def reject(*args):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(processes.os, "killpg", reject, raising=False)
+    monkeypatch.setattr(processes.signal, "SIGKILL", 9, raising=False)
+    monkeypatch.setattr(
+        processes.subprocess, "run", lambda *a, **kw: SimpleNamespace(stdout=f"123 {state}\n")
+    )
+    if denied:
+        with pytest.raises(PermissionError):
+            processes.kill_tree(SimpleNamespace(pid=123))
+    else:
+        processes.kill_tree(SimpleNamespace(pid=123))
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS native permission preflight")
 def test_real_macos_permission_preflight_does_not_request_access():
     result = desktop.capabilities(probe=True)
