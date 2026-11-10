@@ -267,6 +267,30 @@ def test_cancellation_prevents_cached_plan_reuse(settings, store, brief):
         model.close()
 
 
+@pytest.mark.parametrize("enabled,expected", [(False, 2048), (True, 1024)])
+def test_cloud_output_ceiling_does_not_reduce_local_capacity(settings, store, brief, enabled, expected):
+    settings.economy_enabled = enabled
+    settings.cloud_output_tokens = 256
+    job = store.create(brief)
+
+    class LocalCapture(Models):
+        async def _request(self, url, body, headers=None):
+            if url.endswith("/api/show"):
+                return {"model_info": {"fixture.context_length": 32768}}
+            assert body["options"]["num_predict"] == expected
+            return {
+                "done": True,
+                "done_reason": "stop",
+                "message": {"content": sample_plan().model_dump_json()},
+            }
+
+    model = LocalCapture(settings, store)
+    try:
+        assert asyncio.run(model.generate(job["id"], "JSON", {}, Plan)).goals
+    finally:
+        model.close()
+
+
 def test_cloud_cooldown_makes_no_second_paid_request(settings, store, brief):
     settings.economy_enabled = True
     job = store.create(brief)

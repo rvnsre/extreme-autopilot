@@ -119,7 +119,7 @@ class Models:
             schema_json = json.dumps(schema.model_json_schema())
         output_limit = (
             min(
-                self.s.cloud_output_tokens,
+                self.s.cloud_output_tokens if cloud else 2048,
                 {
                     "Plan": self.s.economy_plan_tokens,
                     "Decision": self.s.economy_decision_tokens,
@@ -163,7 +163,10 @@ class Models:
                 "stream": False,
                 "format": schema.model_json_schema(),
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
-                "options": {"num_predict": min(2048, output_limit), "num_ctx": self.local_context},
+                "options": {
+                    "num_predict": min(2048, output_limit) if economy else 2048,
+                    "num_ctx": self.local_context,
+                },
                 "keep_alive": "10m",
             }
             try:
