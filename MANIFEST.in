@@ -3,6 +3,7 @@ include requirements-*.lock.txt
 recursive-include docs *.md
 recursive-include examples *.txt
 recursive-include scripts *.py *.ps1
+recursive-include scripts *.sh
 recursive-include tests *.py
 include web/package.json web/package-lock.json web/tsconfig.json web/vite.config.ts web/index.html
 recursive-include web/src *.ts *.tsx *.css

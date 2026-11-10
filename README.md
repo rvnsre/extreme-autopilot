@@ -1,16 +1,16 @@
 # Extreme Autopilot
 
-One brief, autonomous execution in a dedicated Windows VM. Azərbaycan dilində panel, CLI and authenticated API.
+One brief, autonomous execution on a dedicated Windows, Linux or macOS worker. Azərbaycan dilində panel, CLI and authenticated API.
 
 **Status: implementation preview, not an accepted production release.** Live OpenAI/Ollama + dedicated Windows VM acceptance and the full 24-hour soak must pass before claiming the complete plan is verified. See [VALIDATION.md](VALIDATION.md).
 
-v0.2.0 includes a regression-backed correctness/recovery audit. See [AUDIT.md](AUDIT.md) for reproduced defects, fixes and limits. Existing installations must stop both services and upgrade the coordinator and worker together; see [upgrade instructions](docs/SETUP.md#upgrading-from-v010).
+v0.3.0 adds native platform adapters, Unix installers and three-OS CI. See [platform setup and limitations](docs/PLATFORMS.md). Linux desktop requires X11; macOS native GUI requires initial permissions and dedicated-worker acceptance. The v0.2.0 [correctness/recovery audit](AUDIT.md) remains applicable. Upgrade both services while stopped.
 
 ## What it does
 
 - Accepts one trimmed brief of 200–50,000 Unicode codepoints. No runtime questions or approval inbox.
 - Plans verifiable goals, uses local Ollama first and OpenAI for escalation/vision/independent final verification.
-- Executes sequential browser, Windows UI, file and bounded process tools in a dedicated worker.
+- Executes sequential browser, native desktop, file and bounded process tools in a dedicated worker.
 - Uses API/text, elements and keyboard first; mouse is fallback. Observations carry freshness identifiers.
 - Journals commands before execution, caches results before acknowledgement and fences uncertain actions after a crash.
 - Retains a compact per-goal evidence index across long runs, even after earlier actions leave recent model context.

@@ -116,7 +116,7 @@ def create_app(settings=None, *, worker_only=False, run_engine=True, models=None
 
     app = FastAPI(
         title="Extreme Autopilot",
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,

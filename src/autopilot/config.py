@@ -1,9 +1,10 @@
-import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from autopilot.desktop import default_apps, default_data_dir
 
 
 class ApiCredential(BaseModel):
@@ -52,9 +53,7 @@ class Settings(BaseSettings):
         env_prefix="EA_", env_file=".env", extra="ignore", allow_inf_nan=False, hide_input_in_errors=True
     )
 
-    data_dir: Path = (
-        Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local/share"))) / "ExtremeAutopilot"
-    )
+    data_dir: Path = Field(default_factory=default_data_dir)
     api_token: SecretStr = SecretStr("")
     worker_token: SecretStr = SecretStr("")
     server_url: str = "https://localhost:8766"
@@ -77,7 +76,7 @@ class Settings(BaseSettings):
     # Worker startup must explicitly attest that this is an isolated, dedicated machine/session.
     isolated_worker: bool = False
     process_commands: list[str] = ["python", "node", "git", "npm"]
-    desktop_apps: dict[str, str] = {"notepad": "notepad.exe"}
+    desktop_apps: dict[str, str] = Field(default_factory=default_apps)
     tick_seconds: float = Field(default=1, gt=0, le=30)
     ui_origins: list[str] = ["http://127.0.0.1:8765", "http://localhost:8765"]
 

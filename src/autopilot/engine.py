@@ -21,7 +21,9 @@ browser profile, other tasks, or host resources. Use Python/node for code and te
 Return JSON matching the requested schema. Tool names, args and fresh frame identifiers must match
 the tool catalog. Observe after stale state, errors and recovery. One action per decision.
 Set action.goal_id to the planned goal being advanced. Use evidence_index to retain earlier progress.
-Browser x/y use original viewport pixels; desktop x/y use original window pixels, not resized JPEG.
+Browser x/y use viewport pixels; desktop x/y use window-local OS logical coordinates, not resized JPEG.
+Read observed capabilities before choosing OS tools. Use command shortcuts on macOS, ctrl on Windows/Linux.
+macOS handles identify each app's front window. Linux desktop needs X11; native Wayland is unsupported.
 After uncertain execution do not repeat any possible mutation: obtain independent read evidence.
 If an action fails, change strategy; never loop indefinitely. Completion requires successful result
 action IDs as evidence for EVERY goal, including file_read/process/observations that verify content.

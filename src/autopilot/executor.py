@@ -17,6 +17,7 @@ import httpx
 from pydantic import create_model
 
 from autopilot.config import Settings
+from autopilot.desktop import capabilities, desktop_backend
 from autopilot.policy import scoped_path, validate_authority, web_url
 from autopilot.processes import kill_tree, managed_process
 from autopilot.schema import Action, StrictModel, ToolResult
@@ -78,6 +79,7 @@ class Executor:
         self.browser_frame = self.desktop_frame = ""
         self.desktop_window = None
         self.desktop_handles = set()
+        self._desktop_backend = None
         self.test_private_urls = test_private_urls
 
     def close(self):
@@ -213,39 +215,27 @@ class Executor:
         return page
 
     def _desktop(self, handle=0, visual=False):
-        if os.name != "nt":
-            raise RuntimeError("Windows desktop tools require a Windows interactive session")
-        import ctypes
-
-        desktop = ctypes.windll.user32.OpenInputDesktop(0, False, 0x0100)
-        if not desktop:
-            raise RuntimeError("Interactive desktop unavailable or locked")
-        ctypes.windll.user32.CloseDesktop(desktop)
-        from pywinauto import Desktop
-
-        windows = Desktop(backend="uia").windows(visible_only=True)
-        windows = [w for w in windows if w.window_text() and w.window_text() != "Windows Default Lock Screen"]
-        self.desktop_handles = {w.handle for w in windows}
+        backend = self._native_desktop()
+        windows = backend.windows()[:40]
+        self.desktop_handles = {w["handle"] for w in windows}
         self.desktop_frame = uuid.uuid4().hex
         data = {
-            "windows": [{"handle": w.handle, "title": w.window_text()[:300]} for w in windows[:40]],
+            "windows": [{"handle": w["handle"], "title": w["title"]} for w in windows],
             "frame": self.desktop_frame,
+            "backend": backend.name,
+            "coordinate_units": "window-local OS logical coordinates; not resized JPEG pixels",
         }
         if handle:
             if handle not in self.desktop_handles:
                 raise ValueError("Window handle not present in current desktop")
-            w = next(w for w in windows if w.handle == handle)
+            w = next(w for w in windows if w["handle"] == handle)
             self.desktop_window = w
             data["handle"] = handle
-            data["controls"] = [
-                {"name": c.window_text()[:200], "type": c.element_info.control_type}
-                for c in w.descendants()[:150]
-            ]
-            rect = w.rectangle()
-            self.desktop_rect = (rect.left, rect.top, rect.width(), rect.height())
-            data["bounds"] = {"width": rect.width(), "height": rect.height()}
+            data["controls"] = backend.controls(handle)
+            self.desktop_rect = tuple(w["rect"])
+            data["bounds"] = {"width": w["rect"][2], "height": w["rect"][3]}
             if visual:
-                image = w.capture_as_image()
+                image = backend.capture(w)
                 self.desktop_visual_frame = self.desktop_frame
                 self.desktop_image_digest = hashlib.sha256(image.tobytes()).hexdigest()
                 data["screen"] = pack_image(image)
@@ -253,19 +243,28 @@ class Executor:
             self.desktop_window = None
         return data
 
+    def _native_desktop(self):
+        if self._desktop_backend is None:
+            self._desktop_backend = desktop_backend()
+        return self._desktop_backend
+
     def _check_desktop(self, frame):
         if not frame or frame != self.desktop_frame:
             raise ValueError("Stale desktop frame: observe again before input")
         self.desktop_frame = ""
-        if not self.desktop_window or not self.desktop_window.has_keyboard_focus():
-            # UIA focus may belong to a child; compare foreground top-level handle as well.
-            import ctypes
-
-            if (
-                not self.desktop_window
-                or ctypes.windll.user32.GetForegroundWindow() != self.desktop_window.handle
-            ):
-                raise ValueError("Target window lost focus; observe and focus it again")
+        backend = self._native_desktop()
+        current = next(
+            (
+                w
+                for w in backend.windows()
+                if self.desktop_window and w["handle"] == self.desktop_window["handle"]
+            ),
+            None,
+        )
+        if not current or not backend.focused(current):
+            raise ValueError("Target window lost focus; observe and focus it again")
+        if current["title"] != self.desktop_window["title"] or tuple(current["rect"]) != self.desktop_rect:
+            raise ValueError("Target window changed; observe again before input")
         return self.desktop_window
 
     def _artifact(self, target):
@@ -283,6 +282,7 @@ class Executor:
             return {
                 "files": self._dispatch("file_list", {"path": "."}),
                 "browser": self._browser_state() if self._page else {"open": False},
+                "capabilities": capabilities(),
                 "note": "Recovery observation: previous uncertain side effects must not be repeated",
             }
         if tool == "browser_open":
@@ -354,43 +354,38 @@ class Executor:
         if tool == "desktop_focus":
             if a["frame"] != self.desktop_frame or a["handle"] not in self.desktop_handles:
                 raise ValueError("Focus requires a current observed window handle")
-            from pywinauto import Desktop
-
-            Desktop(backend="uia").window(handle=a["handle"]).set_focus()
+            self._native_desktop().focus(a["handle"])
             return self._desktop(a["handle"], True)
         if tool.startswith("desktop_"):
             window = self._check_desktop(a["frame"])
             if tool == "desktop_type":
-                # VK_PACKET supports Unicode without using or replacing the user's clipboard.
-                escaped = "".join("{" + c + "}" if c in "+^%~(){}" else c for c in a["text"])
+                if len(a["text"]) > 4000:
+                    raise ValueError("Desktop typing is limited to 4,000 characters; prefer file/API tools")
                 self._effect()
-                window.type_keys(
-                    escaped, with_spaces=True, with_tabs=True, with_newlines=True, pause=0.005, vk_packet=True
-                )
+                self._native_desktop().type_text(window, a["text"])
             else:
-                import pyautogui
-
-                pyautogui.FAILSAFE = True
                 if tool == "desktop_key":
                     keys = a["keys"]
-                    if not 1 <= len(keys) <= 4 or any(k not in pyautogui.KEYBOARD_KEYS for k in keys):
-                        raise ValueError("Use 1-4 valid PyAutoGUI key names")
+                    import re
+
+                    if not 1 <= len(keys) <= 4 or any(not re.fullmatch(r"[a-z0-9]{1,12}", k) for k in keys):
+                        raise ValueError("Use 1-4 lowercase key names, e.g. ctrl/s or command/s")
                     self._effect()
-                    pyautogui.hotkey(*keys)
+                    self._native_desktop().hotkey(keys)
                 else:
                     if a["frame"] != getattr(self, "desktop_visual_frame", None):
                         raise ValueError("Coordinate input requires a fresh visual desktop observation")
                     if (
-                        hashlib.sha256(window.capture_as_image().tobytes()).hexdigest()
+                        hashlib.sha256(self._native_desktop().capture(window).tobytes()).hexdigest()
                         != self.desktop_image_digest
                     ):
                         raise ValueError("Window pixels changed; reobserve before coordinate input")
                     left, top, width, height = self.desktop_rect
                     if not (0 <= a["x"] < width and 0 <= a["y"] < height):
-                        raise ValueError("Coordinates must be inside the observed window in original pixels")
+                        raise ValueError("Coordinates must be inside the observed window in OS logical units")
                     self._effect()
-                    pyautogui.click(left + a["x"], top + a["y"])
-            return self._desktop(window.handle, True)
+                    self._native_desktop().click(left + a["x"], top + a["y"])
+            return self._desktop(window["handle"], True)
         if tool.startswith("file_"):
             path = scoped_path(self.root, a["path"])
             if any(p.startswith(".browser") for p in path.relative_to(self.root).parts):

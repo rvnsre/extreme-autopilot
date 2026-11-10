@@ -56,8 +56,11 @@ def tls_certificate(directory, hosts):
     return {"certificate": str(cert_path), "private_key": str(key_path), "expires_days": 90}
 
 
-async def doctor(s, models=False):
+async def doctor(s, models=False, desktop=False):
+    from autopilot.desktop import capabilities
+
     checks = {
+        "capabilities": capabilities(probe=desktop),
         "api_token_configured": token_configured(s.api_token),
         "worker_token_configured": token_configured(s.worker_token),
         "local_model_configured": bool(s.local_model),
@@ -99,6 +102,11 @@ def main():
     sub.add_parser("browser-setup", help="One-time task-account login setup inside the dedicated VM")
     diag = sub.add_parser("doctor")
     diag.add_argument("--models", action="store_true")
+    diag.add_argument(
+        "--desktop",
+        action="store_true",
+        help="Probe the local interactive desktop without requesting permissions",
+    )
     serve = sub.add_parser("serve")
     serve.add_argument("--worker-bind", default="127.0.0.1")
     serve.add_argument("--cert", type=Path, required=True)
@@ -125,7 +133,7 @@ def main():
     if args.command == "tls":
         print(json.dumps(tls_certificate(s.data_dir / "tls", args.host), indent=2))
     elif args.command == "doctor":
-        print(json.dumps(asyncio.run(doctor(s, args.models)), ensure_ascii=False, indent=2))
+        print(json.dumps(asyncio.run(doctor(s, args.models, args.desktop)), ensure_ascii=False, indent=2))
     elif args.command == "worker":
         from autopilot.worker import run_worker
 

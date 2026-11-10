@@ -1,4 +1,6 @@
-# Windows coordinator + dedicated VM
+# Coordinator + dedicated worker
+
+For Linux/macOS installation, native permissions and platform-specific limits, start with [PLATFORMS.md](PLATFORMS.md). The detailed examples below use Windows paths and PowerShell. Host and worker can run different operating systems.
 
 ## Upgrading from v0.1.0
 

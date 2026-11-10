@@ -1,6 +1,7 @@
 """Regenerate version pins from a reviewed Windows verification environment.
 
-Core/dev pins are portable across the CI Python 3.11/3.12 matrix. The desktop worker lock is Windows-only.
+Pins are portable across the CI Python 3.11/3.12 matrix. Windows-only desktop dependencies use markers.
+Regenerate on Windows, which supplies the largest dependency closure; verify all three OSes in CI.
 """
 
 import importlib.metadata as metadata
@@ -46,11 +47,23 @@ def main():
         pins = closure(roots)
         lines = ["# Version-pinned verification environment; regenerate with scripts/lock_dependencies.py."]
         if group == "worker":
-            lines.append("# Windows desktop worker only.")
+            lines.append("# Windows/Linux/macOS worker; Windows-only UI dependencies are marked.")
         for name, version in sorted(pins.items()):
-            marker = (
-                "; sys_platform == 'win32'" if group != "worker" and name in {"pywin32", "comtypes"} else ""
-            )
+            windows_only = {
+                "pywin32",
+                "comtypes",
+                "pywinauto",
+                "pyautogui",
+                "mouseinfo",
+                "pygetwindow",
+                "pymsgbox",
+                "pyperclip",
+                "pyrect",
+                "pyscreeze",
+                "pytweening",
+                "six",
+            }
+            marker = "; sys_platform == 'win32'" if name in windows_only else ""
             lines.append(f"{name}=={version}{marker}")
         (ROOT / f"requirements-{group}.lock.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

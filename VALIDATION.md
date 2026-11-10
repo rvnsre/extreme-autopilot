@@ -2,6 +2,12 @@
 
 This is a source implementation preview. It must not be represented as a zero-error or production-accepted autonomous agent.
 
+## v0.3.0 platform verification
+
+On Windows/Python 3.11, **116 tests passed**, 3 platform/opt-in tests skipped and one upstream Starlette/httpx warning remained. Ruff and formatting checks passed; 6 frontend tests and the production build passed. The three-OS CI result is pending publication. [PLATFORMS.md](docs/PLATFORMS.md) describes supported backends, required permissions and native Wayland restrictions. macOS native GUI input requires dedicated-worker acceptance; permission preflight alone is not a GUI input pass.
+
+The detailed results below are retained v0.2.0 evidence unless explicitly stated otherwise.
+
 ## Local verification
 
 Windows / Python 3.11.9 verification on 2026-11-10:
